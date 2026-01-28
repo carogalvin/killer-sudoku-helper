@@ -142,10 +142,10 @@ function NumberTile({
         className={`w-full h-full rounded-xl flex items-center justify-center text-3xl font-bold transition-shadow duration-150 ${
           isDragging
             ? 'bg-primary text-primary-foreground shadow-2xl'
-            : 'bg-card text-card-foreground shadow-lg hover:shadow-xl border border-border'
+            : 'bg-white text-foreground shadow-lg hover:shadow-xl border border-border'
         }`}
       >
-        {value}
+        <span className="text-foreground">{value}</span>
       </div>
     </motion.div>
   )
