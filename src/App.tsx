@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, type RefObject } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { ArrowsClockwise } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
@@ -98,25 +98,21 @@ function NumberTile({
   constraintsRef: React.RefObject<HTMLDivElement | null>
 }) {
   const [isDragging, setIsDragging] = useState(false)
-  const tileRef = useRef<HTMLDivElement>(null)
 
   return (
     <motion.div
-      ref={tileRef}
       drag
       dragConstraints={constraintsRef}
       dragMomentum={false}
       dragElastic={0}
+      initial={false}
+      animate={{ x: 0, y: 0 }}
       onDragStart={() => setIsDragging(true)}
-      onDragEnd={() => {
+      onDragEnd={(_, info) => {
         setIsDragging(false)
-        if (constraintsRef.current && tileRef.current) {
-          const boardRect = constraintsRef.current.getBoundingClientRect()
-          const tileRect = tileRef.current.getBoundingClientRect()
-          const newX = tileRect.left - boardRect.left
-          const newY = tileRect.top - boardRect.top
-          onDragEnd(id, newX, newY)
-        }
+        const newX = x + info.offset.x
+        const newY = y + info.offset.y
+        onDragEnd(id, newX, newY)
       }}
       className="absolute cursor-grab active:cursor-grabbing select-none"
       style={{ 
