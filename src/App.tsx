@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, type RefObject } from 'react'
 import { motion } from 'framer-motion'
 import { ArrowsClockwise } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
@@ -98,23 +98,23 @@ function NumberTile({
   constraintsRef: React.RefObject<HTMLDivElement | null>
 }) {
   const [isDragging, setIsDragging] = useState(false)
+  const tileRef = useRef<HTMLDivElement>(null)
 
   return (
     <motion.div
+      ref={tileRef}
       drag
       dragConstraints={constraintsRef}
       dragMomentum={false}
       dragElastic={0}
       onDragStart={() => setIsDragging(true)}
-      onDrag={(_, info) => {
-        onDragEnd(id, info.point.x, info.point.y)
-      }}
-      onDragEnd={(_, info) => {
+      onDragEnd={() => {
         setIsDragging(false)
-        if (constraintsRef.current) {
-          const rect = constraintsRef.current.getBoundingClientRect()
-          const newX = info.point.x - rect.left - TILE_SIZE / 2
-          const newY = info.point.y - rect.top - TILE_SIZE / 2
+        if (constraintsRef.current && tileRef.current) {
+          const boardRect = constraintsRef.current.getBoundingClientRect()
+          const tileRect = tileRef.current.getBoundingClientRect()
+          const newX = tileRect.left - boardRect.left
+          const newY = tileRect.top - boardRect.top
           onDragEnd(id, newX, newY)
         }
       }}
