@@ -295,28 +295,103 @@ function BlockHandle({
   )
 }
 
-function CageOverlay({ cage }: { cage: Cage }) {
+function CageHandle({
+  cage,
+  cageIndex,
+  onDragEnd,
+  constraintsRef,
+  allCages,
+}: {
+  cage: Cage
+  cageIndex: number
+  onDragEnd: (tileIds: string[], deltaX: number, deltaY: number) => void
+  constraintsRef: React.RefObject<HTMLDivElement | null>
+  allCages: Cage[]
+}) {
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
+  const [isOverlapping, setIsOverlapping] = useState(false)
+
   const width = cage.bounds.maxX - cage.bounds.minX
   const height = cage.bounds.maxY - cage.bounds.minY
 
+  const checkOverlap = useCallback((offsetX: number, offsetY: number) => {
+    const movedBounds = {
+      minX: cage.bounds.minX + offsetX,
+      minY: cage.bounds.minY + offsetY,
+      maxX: cage.bounds.maxX + offsetX,
+      maxY: cage.bounds.maxY + offsetY,
+    }
+    
+    for (let i = 0; i < allCages.length; i++) {
+      if (i === cageIndex) continue
+      if (boundsOverlap(movedBounds, allCages[i].bounds)) {
+        return true
+      }
+    }
+    return false
+  }, [cage, cageIndex, allCages])
+
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.15 }}
-      className="absolute pointer-events-none"
+      drag
+      dragConstraints={constraintsRef}
+      dragMomentum={false}
+      dragElastic={0}
+      animate={{ x: dragOffset.x, y: dragOffset.y }}
+      transition={{ type: 'tween', duration: 0 }}
+      onDragStart={() => setIsDragging(true)}
+      onDrag={(_, info) => {
+        setDragOffset({ x: info.offset.x, y: info.offset.y })
+        setIsOverlapping(checkOverlap(info.offset.x, info.offset.y))
+      }}
+      onDragEnd={(_, info) => {
+        setIsDragging(false)
+        const wouldOverlap = checkOverlap(info.offset.x, info.offset.y)
+        setDragOffset({ x: 0, y: 0 })
+        setIsOverlapping(false)
+        
+        if (!wouldOverlap) {
+          onDragEnd(cage.tiles.map(t => t.id), info.offset.x, info.offset.y)
+        }
+      }}
+      className="absolute cursor-grab active:cursor-grabbing select-none"
       style={{
         left: cage.bounds.minX,
         top: cage.bounds.minY,
         width,
         height,
-        zIndex: 1,
+        zIndex: isDragging ? 45 : 2,
       }}
     >
-      <div className="absolute inset-0 rounded-2xl border-2 border-dashed border-accent bg-accent/10" />
-      <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-accent text-accent-foreground text-sm font-medium shadow-md whitespace-nowrap">
-        Σ = {cage.sum}
+      <div
+        className={`w-full h-full rounded-2xl border-2 border-dashed transition-all duration-150 ${
+          isDragging
+            ? isOverlapping
+              ? 'border-destructive bg-destructive/10 shadow-xl'
+              : 'border-accent bg-accent/20 shadow-xl'
+            : 'border-accent bg-accent/10 hover:bg-accent/20'
+        }`}
+      >
+        <div
+          className={`absolute top-2 right-2 p-1 rounded-lg transition-colors ${
+            isDragging
+              ? isOverlapping
+                ? 'bg-destructive text-destructive-foreground'
+                : 'bg-accent text-accent-foreground'
+              : 'bg-accent text-accent-foreground'
+          }`}
+        >
+          <DotsSixVertical weight="bold" size={16} />
+        </div>
+        <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-accent text-accent-foreground text-sm font-medium shadow-md whitespace-nowrap">
+          Σ = {cage.sum}
+        </div>
+        {isDragging && isOverlapping && (
+          <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded bg-destructive text-destructive-foreground text-xs font-medium whitespace-nowrap">
+            Cannot overlap!
+          </div>
+        )}
       </div>
     </motion.div>
   )
@@ -387,6 +462,40 @@ export default function App() {
     [setPositions]
   )
 
+  const handleCageDrag = useCallback(
+    (tileIds: string[], deltaX: number, deltaY: number) => {
+      if (!boardRef.current) return
+
+      const rect = boardRef.current.getBoundingClientRect()
+
+      setPositions((prev) => {
+        const currentPositions = prev ?? []
+        const cageTiles = currentPositions.filter((p) => tileIds.includes(p.id))
+        
+        const minTileX = Math.min(...cageTiles.map((t) => t.x))
+        const minTileY = Math.min(...cageTiles.map((t) => t.y))
+        const maxTileX = Math.max(...cageTiles.map((t) => t.x))
+        const maxTileY = Math.max(...cageTiles.map((t) => t.y))
+        
+        const clampedDeltaX = Math.max(
+          16 - minTileX,
+          Math.min(deltaX, rect.width - maxTileX - TILE_SIZE - 16)
+        )
+        const clampedDeltaY = Math.max(
+          16 - minTileY,
+          Math.min(deltaY, rect.height - maxTileY - TILE_SIZE - 16)
+        )
+
+        return currentPositions.map((p) =>
+          tileIds.includes(p.id)
+            ? { ...p, x: p.x + clampedDeltaX, y: p.y + clampedDeltaY }
+            : p
+        )
+      })
+    },
+    [setPositions]
+  )
+
   const handleAddBlock = useCallback(() => {
     const currentCount = blockCount ?? 1
     const col = currentCount % 3
@@ -445,7 +554,14 @@ export default function App() {
             }}
           >
             {cages.map((cage, i) => (
-              <CageOverlay key={`cage-${i}-${cage.tiles.map(t => t.id).join('-')}`} cage={cage} />
+              <CageHandle
+                key={`cage-${i}-${cage.tiles.map(t => t.id).join('-')}`}
+                cage={cage}
+                cageIndex={i}
+                onDragEnd={handleCageDrag}
+                constraintsRef={boardRef}
+                allCages={cages}
+              />
             ))}
 
             {blocks.map((block) => (
