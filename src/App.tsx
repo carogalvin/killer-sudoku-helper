@@ -106,17 +106,25 @@ function NumberTile({
       dragMomentum={false}
       dragElastic={0}
       onDragStart={() => setIsDragging(true)}
+      onDrag={(_, info) => {
+        onDragEnd(id, info.point.x, info.point.y)
+      }}
       onDragEnd={(_, info) => {
         setIsDragging(false)
-        const newX = x + info.offset.x
-        const newY = y + info.offset.y
-        onDragEnd(id, newX, newY)
+        if (constraintsRef.current) {
+          const rect = constraintsRef.current.getBoundingClientRect()
+          const newX = info.point.x - rect.left - TILE_SIZE / 2
+          const newY = info.point.y - rect.top - TILE_SIZE / 2
+          onDragEnd(id, newX, newY)
+        }
       }}
-      initial={false}
-      animate={{ x, y }}
-      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
       className="absolute cursor-grab active:cursor-grabbing select-none"
-      style={{ width: TILE_SIZE, height: TILE_SIZE, left: 0, top: 0 }}
+      style={{ 
+        width: TILE_SIZE, 
+        height: TILE_SIZE, 
+        left: x, 
+        top: y,
+      }}
       whileHover={{ scale: 1.05 }}
       whileTap={{ scale: 1.1 }}
     >
@@ -168,7 +176,7 @@ export default function App() {
     setCages(findCages(positions ?? []))
   }, [positions])
 
-  const handleDragEnd = useCallback(
+  const handlePositionUpdate = useCallback(
     (id: number, newX: number, newY: number) => {
       if (!boardRef.current) return
 
@@ -229,7 +237,7 @@ export default function App() {
                 id={pos.id}
                 x={pos.x}
                 y={pos.y}
-                onDragEnd={handleDragEnd}
+                onDragEnd={handlePositionUpdate}
                 constraintsRef={boardRef}
               />
             ))}
