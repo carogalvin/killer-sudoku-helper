@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowsClockwise, Plus } from '@phosphor-icons/react'
+import { ArrowsClockwise, Plus, DotsSixVertical } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useKV } from '@github/spark/hooks'
@@ -10,6 +10,13 @@ interface TilePosition {
   value: number
   x: number
   y: number
+  blockIndex: number
+}
+
+interface Block {
+  index: number
+  tiles: TilePosition[]
+  bounds: { minX: number; minY: number; maxX: number; maxY: number }
 }
 
 interface Cage {
@@ -21,8 +28,8 @@ interface Cage {
 const TILE_SIZE = 64
 const GROUPING_THRESHOLD = 100
 const GRID_COLS = 3
-const GRID_ROWS = 3
 const GRID_GAP = 16
+const BLOCK_PADDING = 12
 
 function createBlockPositions(blockIndex: number, startX: number, startY: number): TilePosition[] {
   const positions: TilePosition[] = []
@@ -34,6 +41,7 @@ function createBlockPositions(blockIndex: number, startX: number, startY: number
       value: i,
       x: startX + col * (TILE_SIZE + GRID_GAP),
       y: startY + row * (TILE_SIZE + GRID_GAP),
+      blockIndex,
     })
   }
   return positions
@@ -41,6 +49,45 @@ function createBlockPositions(blockIndex: number, startX: number, startY: number
 
 function getInitialPositions(): TilePosition[] {
   return createBlockPositions(0, 40, 40)
+}
+
+function getBlockBounds(tiles: TilePosition[]): { minX: number; minY: number; maxX: number; maxY: number } {
+  const xs = tiles.map((t) => t.x)
+  const ys = tiles.map((t) => t.y)
+  return {
+    minX: Math.min(...xs) - BLOCK_PADDING,
+    minY: Math.min(...ys) - BLOCK_PADDING,
+    maxX: Math.max(...xs) + TILE_SIZE + BLOCK_PADDING,
+    maxY: Math.max(...ys) + TILE_SIZE + BLOCK_PADDING,
+  }
+}
+
+function getBlocks(positions: TilePosition[]): Block[] {
+  const blockMap = new Map<number, TilePosition[]>()
+  for (const pos of positions) {
+    const existing = blockMap.get(pos.blockIndex) || []
+    existing.push(pos)
+    blockMap.set(pos.blockIndex, existing)
+  }
+  
+  const blocks: Block[] = []
+  for (const [index, tiles] of blockMap) {
+    blocks.push({
+      index,
+      tiles,
+      bounds: getBlockBounds(tiles),
+    })
+  }
+  return blocks
+}
+
+function boundsOverlap(a: Block['bounds'], b: Block['bounds'], padding = 8): boolean {
+  return !(
+    a.maxX + padding < b.minX ||
+    b.maxX + padding < a.minX ||
+    a.maxY + padding < b.minY ||
+    b.maxY + padding < a.minY
+  )
 }
 
 function findCages(positions: TilePosition[]): Cage[] {
@@ -151,6 +198,103 @@ function NumberTile({
   )
 }
 
+function BlockHandle({
+  block,
+  onDragEnd,
+  constraintsRef,
+  allBlocks,
+}: {
+  block: Block
+  onDragEnd: (blockIndex: number, deltaX: number, deltaY: number) => void
+  constraintsRef: React.RefObject<HTMLDivElement | null>
+  allBlocks: Block[]
+}) {
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
+  const [isOverlapping, setIsOverlapping] = useState(false)
+
+  const width = block.bounds.maxX - block.bounds.minX
+  const height = block.bounds.maxY - block.bounds.minY
+
+  const checkOverlap = useCallback((offsetX: number, offsetY: number) => {
+    const movedBounds = {
+      minX: block.bounds.minX + offsetX,
+      minY: block.bounds.minY + offsetY,
+      maxX: block.bounds.maxX + offsetX,
+      maxY: block.bounds.maxY + offsetY,
+    }
+    
+    for (const other of allBlocks) {
+      if (other.index === block.index) continue
+      if (boundsOverlap(movedBounds, other.bounds)) {
+        return true
+      }
+    }
+    return false
+  }, [block, allBlocks])
+
+  return (
+    <motion.div
+      drag
+      dragConstraints={constraintsRef}
+      dragMomentum={false}
+      dragElastic={0}
+      animate={{ x: dragOffset.x, y: dragOffset.y }}
+      transition={{ type: 'tween', duration: 0 }}
+      onDragStart={() => setIsDragging(true)}
+      onDrag={(_, info) => {
+        setDragOffset({ x: info.offset.x, y: info.offset.y })
+        setIsOverlapping(checkOverlap(info.offset.x, info.offset.y))
+      }}
+      onDragEnd={(_, info) => {
+        setIsDragging(false)
+        const wouldOverlap = checkOverlap(info.offset.x, info.offset.y)
+        setDragOffset({ x: 0, y: 0 })
+        setIsOverlapping(false)
+        
+        if (!wouldOverlap) {
+          onDragEnd(block.index, info.offset.x, info.offset.y)
+        }
+      }}
+      className="absolute cursor-grab active:cursor-grabbing select-none"
+      style={{
+        left: block.bounds.minX,
+        top: block.bounds.minY,
+        width,
+        height,
+        zIndex: isDragging ? 40 : 5,
+      }}
+    >
+      <div
+        className={`w-full h-full rounded-2xl border-2 transition-all duration-150 ${
+          isDragging
+            ? isOverlapping
+              ? 'border-destructive bg-destructive/10 shadow-xl'
+              : 'border-primary bg-primary/5 shadow-xl'
+            : 'border-transparent hover:border-muted-foreground/30 hover:bg-muted/30'
+        }`}
+      >
+        <div
+          className={`absolute top-2 left-2 p-1 rounded-lg transition-colors ${
+            isDragging
+              ? isOverlapping
+                ? 'bg-destructive text-destructive-foreground'
+                : 'bg-primary text-primary-foreground'
+              : 'bg-muted text-muted-foreground'
+          }`}
+        >
+          <DotsSixVertical weight="bold" size={16} />
+        </div>
+        {isDragging && isOverlapping && (
+          <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded bg-destructive text-destructive-foreground text-xs font-medium whitespace-nowrap">
+            Cannot overlap!
+          </div>
+        )}
+      </div>
+    </motion.div>
+  )
+}
+
 function CageOverlay({ cage }: { cage: Cage }) {
   const width = cage.bounds.maxX - cage.bounds.minX
   const height = cage.bounds.maxY - cage.bounds.minY
@@ -167,6 +311,7 @@ function CageOverlay({ cage }: { cage: Cage }) {
         top: cage.bounds.minY,
         width,
         height,
+        zIndex: 1,
       }}
     >
       <div className="absolute inset-0 rounded-2xl border-2 border-dashed border-accent bg-accent/10" />
@@ -182,9 +327,12 @@ export default function App() {
   const [positions, setPositions] = useKV<TilePosition[]>('tile-positions', getInitialPositions())
   const [blockCount, setBlockCount] = useKV<number>('block-count', 1)
   const [cages, setCages] = useState<Cage[]>([])
+  const [blocks, setBlocks] = useState<Block[]>([])
 
   useEffect(() => {
-    setCages(findCages(positions ?? []))
+    const currentPositions = positions ?? []
+    setCages(findCages(currentPositions))
+    setBlocks(getBlocks(currentPositions))
   }, [positions])
 
   const handlePositionUpdate = useCallback(
@@ -205,12 +353,46 @@ export default function App() {
     [setPositions]
   )
 
+  const handleBlockDrag = useCallback(
+    (blockIndex: number, deltaX: number, deltaY: number) => {
+      if (!boardRef.current) return
+
+      const rect = boardRef.current.getBoundingClientRect()
+
+      setPositions((prev) => {
+        const currentPositions = prev ?? []
+        const blockTiles = currentPositions.filter((p) => p.blockIndex === blockIndex)
+        
+        const minTileX = Math.min(...blockTiles.map((t) => t.x))
+        const minTileY = Math.min(...blockTiles.map((t) => t.y))
+        const maxTileX = Math.max(...blockTiles.map((t) => t.x))
+        const maxTileY = Math.max(...blockTiles.map((t) => t.y))
+        
+        const clampedDeltaX = Math.max(
+          16 - minTileX,
+          Math.min(deltaX, rect.width - maxTileX - TILE_SIZE - 16)
+        )
+        const clampedDeltaY = Math.max(
+          16 - minTileY,
+          Math.min(deltaY, rect.height - maxTileY - TILE_SIZE - 16)
+        )
+
+        return currentPositions.map((p) =>
+          p.blockIndex === blockIndex
+            ? { ...p, x: p.x + clampedDeltaX, y: p.y + clampedDeltaY }
+            : p
+        )
+      })
+    },
+    [setPositions]
+  )
+
   const handleAddBlock = useCallback(() => {
     const currentCount = blockCount ?? 1
     const col = currentCount % 3
     const row = Math.floor(currentCount / 3)
-    const startX = 40 + col * (3 * (TILE_SIZE + GRID_GAP) + 40)
-    const startY = 40 + row * (3 * (TILE_SIZE + GRID_GAP) + 40)
+    const startX = 40 + col * (3 * (TILE_SIZE + GRID_GAP) + 60)
+    const startY = 40 + row * (3 * (TILE_SIZE + GRID_GAP) + 60)
     
     const newPositions = createBlockPositions(currentCount, startX, startY)
     setPositions((prev) => [...(prev ?? []), ...newPositions])
@@ -236,7 +418,7 @@ export default function App() {
               Killer Sudoku Helper
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Drag numbers together to see cage sums
+              Drag blocks by the handle or individual tiles to form cages
             </p>
           </div>
           <div className="flex gap-2">
@@ -264,6 +446,16 @@ export default function App() {
           >
             {cages.map((cage, i) => (
               <CageOverlay key={`cage-${i}-${cage.tiles.map(t => t.id).join('-')}`} cage={cage} />
+            ))}
+
+            {blocks.map((block) => (
+              <BlockHandle
+                key={`block-handle-${block.index}`}
+                block={block}
+                onDragEnd={handleBlockDrag}
+                constraintsRef={boardRef}
+                allBlocks={blocks}
+              />
             ))}
 
             {(positions ?? []).map((pos) => (
@@ -302,7 +494,7 @@ export default function App() {
         </div>
 
         <div className="mt-6 text-center text-sm text-muted-foreground">
-          <p>Tip: Drag tiles close together to form cages. The sum appears automatically!</p>
+          <p>Tip: Use the grip icon to drag entire blocks. Blocks cannot overlap!</p>
         </div>
       </div>
     </div>
