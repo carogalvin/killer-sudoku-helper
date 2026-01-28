@@ -70,8 +70,8 @@ function findCages(positions: TilePosition[]): Cage[] {
     }
 
     if (group.length > 1) {
-      const tiles = group.map((t) => ({ id: t.id, value: t.value }))
-      const sum = tiles.reduce((acc, t) => acc + t.value, 0)
+      const tiles = group.map((t) => ({ id: t.id, value: t.value ?? 0 }))
+      const sum = tiles.reduce((acc, t) => acc + (Number(t.value) || 0), 0)
       const xs = group.map((t) => t.x)
       const ys = group.map((t) => t.y)
       cages.push({
@@ -142,10 +142,10 @@ function NumberTile({
         className={`w-full h-full rounded-xl flex items-center justify-center text-3xl font-bold transition-shadow duration-150 ${
           isDragging
             ? 'bg-primary text-primary-foreground shadow-2xl'
-            : 'bg-white text-foreground shadow-lg hover:shadow-xl border border-border'
+            : 'bg-white shadow-lg hover:shadow-xl border border-border'
         }`}
       >
-        <span className="text-foreground">{value}</span>
+        <span className={isDragging ? 'text-primary-foreground' : 'text-slate-800'}>{value}</span>
       </div>
     </motion.div>
   )
@@ -218,8 +218,10 @@ export default function App() {
   }, [blockCount, setPositions, setBlockCount])
 
   const handleReset = () => {
-    setPositions(getInitialPositions())
+    const freshPositions = getInitialPositions()
+    setPositions(freshPositions)
     setBlockCount(1)
+    setCages([])
   }
 
   const totalTiles = (positions ?? []).length
