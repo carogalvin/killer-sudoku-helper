@@ -1,18 +1,19 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowsClockwise } from '@phosphor-icons/react'
+import { ArrowsClockwise, Plus } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useKV } from '@github/spark/hooks'
 
 interface TilePosition {
-  id: number
+  id: string
+  value: number
   x: number
   y: number
 }
 
 interface Cage {
-  tiles: number[]
+  tiles: { id: string; value: number }[]
   sum: number
   bounds: { minX: number; minY: number; maxX: number; maxY: number }
 }
@@ -23,22 +24,27 @@ const GRID_COLS = 3
 const GRID_ROWS = 3
 const GRID_GAP = 16
 
-function getInitialPositions(): TilePosition[] {
+function createBlockPositions(blockIndex: number, startX: number, startY: number): TilePosition[] {
   const positions: TilePosition[] = []
   for (let i = 1; i <= 9; i++) {
     const col = (i - 1) % GRID_COLS
     const row = Math.floor((i - 1) / GRID_COLS)
     positions.push({
-      id: i,
-      x: 40 + col * (TILE_SIZE + GRID_GAP),
-      y: 40 + row * (TILE_SIZE + GRID_GAP),
+      id: `block-${blockIndex}-tile-${i}`,
+      value: i,
+      x: startX + col * (TILE_SIZE + GRID_GAP),
+      y: startY + row * (TILE_SIZE + GRID_GAP),
     })
   }
   return positions
 }
 
+function getInitialPositions(): TilePosition[] {
+  return createBlockPositions(0, 40, 40)
+}
+
 function findCages(positions: TilePosition[]): Cage[] {
-  const visited = new Set<number>()
+  const visited = new Set<string>()
   const cages: Cage[] = []
 
   for (const pos of positions) {
@@ -64,8 +70,8 @@ function findCages(positions: TilePosition[]): Cage[] {
     }
 
     if (group.length > 1) {
-      const tiles = group.map((t) => t.id)
-      const sum = tiles.reduce((acc, id) => acc + id, 0)
+      const tiles = group.map((t) => ({ id: t.id, value: t.value }))
+      const sum = tiles.reduce((acc, t) => acc + t.value, 0)
       const xs = group.map((t) => t.x)
       const ys = group.map((t) => t.y)
       cages.push({
@@ -86,15 +92,17 @@ function findCages(positions: TilePosition[]): Cage[] {
 
 function NumberTile({
   id,
+  value,
   x,
   y,
   onDragEnd,
   constraintsRef,
 }: {
-  id: number
+  id: string
+  value: number
   x: number
   y: number
-  onDragEnd: (id: number, x: number, y: number) => void
+  onDragEnd: (id: string, x: number, y: number) => void
   constraintsRef: React.RefObject<HTMLDivElement | null>
 }) {
   const [isDragging, setIsDragging] = useState(false)
@@ -137,7 +145,7 @@ function NumberTile({
             : 'bg-card text-card-foreground shadow-lg hover:shadow-xl border border-border'
         }`}
       >
-        {id}
+        {value}
       </div>
     </motion.div>
   )
@@ -172,6 +180,7 @@ function CageOverlay({ cage }: { cage: Cage }) {
 export default function App() {
   const boardRef = useRef<HTMLDivElement>(null)
   const [positions, setPositions] = useKV<TilePosition[]>('tile-positions', getInitialPositions())
+  const [blockCount, setBlockCount] = useKV<number>('block-count', 1)
   const [cages, setCages] = useState<Cage[]>([])
 
   useEffect(() => {
@@ -179,7 +188,7 @@ export default function App() {
   }, [positions])
 
   const handlePositionUpdate = useCallback(
-    (id: number, newX: number, newY: number) => {
+    (id: string, newX: number, newY: number) => {
       if (!boardRef.current) return
 
       const rect = boardRef.current.getBoundingClientRect()
@@ -196,13 +205,29 @@ export default function App() {
     [setPositions]
   )
 
+  const handleAddBlock = useCallback(() => {
+    const currentCount = blockCount ?? 1
+    const col = currentCount % 3
+    const row = Math.floor(currentCount / 3)
+    const startX = 40 + col * (3 * (TILE_SIZE + GRID_GAP) + 40)
+    const startY = 40 + row * (3 * (TILE_SIZE + GRID_GAP) + 40)
+    
+    const newPositions = createBlockPositions(currentCount, startX, startY)
+    setPositions((prev) => [...(prev ?? []), ...newPositions])
+    setBlockCount(currentCount + 1)
+  }, [blockCount, setPositions, setBlockCount])
+
   const handleReset = () => {
     setPositions(getInitialPositions())
+    setBlockCount(1)
   }
+
+  const totalTiles = (positions ?? []).length
+  const tilesInCages = cages.reduce((acc, c) => acc + c.tiles.length, 0)
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-foreground tracking-tight">
@@ -212,16 +237,22 @@ export default function App() {
               Drag numbers together to see cage sums
             </p>
           </div>
-          <Button variant="outline" onClick={handleReset} className="gap-2">
-            <ArrowsClockwise weight="bold" />
-            Reset
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="default" onClick={handleAddBlock} className="gap-2">
+              <Plus weight="bold" />
+              Add Block
+            </Button>
+            <Button variant="outline" onClick={handleReset} className="gap-2">
+              <ArrowsClockwise weight="bold" />
+              Reset
+            </Button>
+          </div>
         </div>
 
         <Card className="relative overflow-hidden bg-card/50 backdrop-blur">
           <div
             ref={boardRef}
-            className="relative w-full h-[500px] md:h-[600px]"
+            className="relative w-full h-[500px] md:h-[700px]"
             style={{
               backgroundImage: `
                 radial-gradient(circle, oklch(0.85 0.01 250) 1px, transparent 1px)
@@ -230,13 +261,14 @@ export default function App() {
             }}
           >
             {cages.map((cage, i) => (
-              <CageOverlay key={`cage-${i}-${cage.tiles.join('-')}`} cage={cage} />
+              <CageOverlay key={`cage-${i}-${cage.tiles.map(t => t.id).join('-')}`} cage={cage} />
             ))}
 
             {(positions ?? []).map((pos) => (
               <NumberTile
                 key={pos.id}
                 id={pos.id}
+                value={pos.value}
                 x={pos.x}
                 y={pos.y}
                 onDragEnd={handlePositionUpdate}
@@ -248,8 +280,12 @@ export default function App() {
 
         <div className="mt-6 flex flex-wrap gap-4 justify-center">
           <div className="text-center px-4 py-2 rounded-lg bg-secondary">
-            <div className="text-xs text-muted-foreground uppercase tracking-wide">Total</div>
-            <div className="text-xl font-bold text-foreground">45</div>
+            <div className="text-xs text-muted-foreground uppercase tracking-wide">Blocks</div>
+            <div className="text-xl font-bold text-foreground">{blockCount ?? 1}</div>
+          </div>
+          <div className="text-center px-4 py-2 rounded-lg bg-secondary">
+            <div className="text-xs text-muted-foreground uppercase tracking-wide">Tiles</div>
+            <div className="text-xl font-bold text-foreground">{totalTiles}</div>
           </div>
           <div className="text-center px-4 py-2 rounded-lg bg-secondary">
             <div className="text-xs text-muted-foreground uppercase tracking-wide">Cages</div>
@@ -258,7 +294,7 @@ export default function App() {
           <div className="text-center px-4 py-2 rounded-lg bg-secondary">
             <div className="text-xs text-muted-foreground uppercase tracking-wide">Ungrouped</div>
             <div className="text-xl font-bold text-foreground">
-              {9 - cages.reduce((acc, c) => acc + c.tiles.length, 0)}
+              {totalTiles - tilesInCages}
             </div>
           </div>
         </div>
