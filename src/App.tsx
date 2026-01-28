@@ -98,6 +98,7 @@ function NumberTile({
   constraintsRef: React.RefObject<HTMLDivElement | null>
 }) {
   const [isDragging, setIsDragging] = useState(false)
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
 
   return (
     <motion.div
@@ -105,13 +106,17 @@ function NumberTile({
       dragConstraints={constraintsRef}
       dragMomentum={false}
       dragElastic={0}
-      initial={false}
-      animate={{ x: 0, y: 0 }}
+      animate={{ x: dragOffset.x, y: dragOffset.y }}
+      transition={{ type: 'tween', duration: 0 }}
       onDragStart={() => setIsDragging(true)}
+      onDrag={(_, info) => {
+        setDragOffset({ x: info.offset.x, y: info.offset.y })
+      }}
       onDragEnd={(_, info) => {
         setIsDragging(false)
         const newX = x + info.offset.x
         const newY = y + info.offset.y
+        setDragOffset({ x: 0, y: 0 })
         onDragEnd(id, newX, newY)
       }}
       className="absolute cursor-grab active:cursor-grabbing select-none"
@@ -120,6 +125,7 @@ function NumberTile({
         height: TILE_SIZE, 
         left: x, 
         top: y,
+        zIndex: isDragging ? 50 : 10,
       }}
       whileHover={{ scale: 1.05 }}
       whileTap={{ scale: 1.1 }}
