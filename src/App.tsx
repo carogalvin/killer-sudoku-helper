@@ -425,6 +425,13 @@ function CageHandle({
   )
 }
 
+interface TrackedCage {
+  id: string
+  targetSum: number
+  numCells: number
+  eliminatedCombos: string[]
+}
+
 function CombinationCalculator({
   isOpen,
   onClose,
@@ -434,6 +441,8 @@ function CombinationCalculator({
 }) {
   const [targetSum, setTargetSum] = useState('')
   const [numCells, setNumCells] = useState('2')
+  const [trackedCages, setTrackedCages] = useKV<TrackedCage[]>('tracked-cages', [])
+  const [selectedCageId, setSelectedCageId] = useState<string | null>(null)
 
   const combinations = useMemo(() => {
     const sum = parseInt(targetSum)
@@ -444,6 +453,62 @@ function CombinationCalculator({
     return findCombinations(sum, cells)
   }, [targetSum, numCells])
 
+  const selectedCage = useMemo(() => {
+    return (trackedCages ?? []).find(c => c.id === selectedCageId)
+  }, [trackedCages, selectedCageId])
+
+  const selectedCageCombos = useMemo(() => {
+    if (!selectedCage) return []
+    return findCombinations(selectedCage.targetSum, selectedCage.numCells)
+  }, [selectedCage])
+
+  const handleAddTrackedCage = () => {
+    const sum = parseInt(targetSum)
+    const cells = parseInt(numCells)
+    if (isNaN(sum) || isNaN(cells) || sum < 1 || cells < 1 || cells > 9) return
+    if (combinations.length === 0) return
+
+    const newCage: TrackedCage = {
+      id: `cage-${Date.now()}`,
+      targetSum: sum,
+      numCells: cells,
+      eliminatedCombos: [],
+    }
+    setTrackedCages(prev => [...(prev ?? []), newCage])
+    setSelectedCageId(newCage.id)
+    setTargetSum('')
+    setNumCells('2')
+  }
+
+  const handleToggleCombo = (comboKey: string) => {
+    if (!selectedCageId) return
+    setTrackedCages(prev => {
+      return (prev ?? []).map(cage => {
+        if (cage.id !== selectedCageId) return cage
+        const isEliminated = cage.eliminatedCombos.includes(comboKey)
+        return {
+          ...cage,
+          eliminatedCombos: isEliminated
+            ? cage.eliminatedCombos.filter(k => k !== comboKey)
+            : [...cage.eliminatedCombos, comboKey],
+        }
+      })
+    })
+  }
+
+  const handleDeleteCage = (cageId: string) => {
+    setTrackedCages(prev => (prev ?? []).filter(c => c.id !== cageId))
+    if (selectedCageId === cageId) {
+      setSelectedCageId(null)
+    }
+  }
+
+  const getComboKey = (combo: number[]) => combo.join('-')
+
+  const remainingCount = selectedCage
+    ? selectedCageCombos.length - selectedCage.eliminatedCombos.length
+    : 0
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -452,7 +517,7 @@ function CombinationCalculator({
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 20, scale: 0.95 }}
           transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className="fixed bottom-4 right-4 w-80 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden z-50"
+          className="fixed bottom-4 right-4 w-96 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden z-50"
         >
           <div className="flex items-center justify-between px-4 py-3 bg-primary text-primary-foreground">
             <div className="flex items-center gap-2">
@@ -468,98 +533,252 @@ function CombinationCalculator({
           </div>
 
           <div className="p-4 space-y-4">
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-                  Target Sum
-                </label>
-                <Input
-                  type="number"
-                  min="1"
-                  max="45"
-                  value={targetSum}
-                  onChange={(e) => setTargetSum(e.target.value)}
-                  placeholder="e.g. 15"
-                  className="h-10"
-                  id="target-sum"
-                />
-              </div>
-              <div className="w-24">
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-                  Cells
-                </label>
-                <Input
-                  type="number"
-                  min="2"
-                  max="9"
-                  value={numCells}
-                  onChange={(e) => setNumCells(e.target.value)}
-                  className="h-10"
-                  id="num-cells"
-                />
-              </div>
-            </div>
-
-            <div className="border-t border-border pt-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-foreground">
-                  Possible Combinations
-                </span>
-                <span className="text-xs text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">
-                  {combinations.length} found
-                </span>
-              </div>
-
-              {targetSum && combinations.length === 0 ? (
-                <div className="text-center py-6 text-muted-foreground text-sm">
-                  No valid combinations found
+            {(trackedCages ?? []).length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Tracked Cages
                 </div>
-              ) : combinations.length > 0 ? (
-                <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                  {combinations.map((combo, idx) => {
+                <div className="flex flex-wrap gap-2">
+                  {(trackedCages ?? []).map(cage => {
+                    const combos = findCombinations(cage.targetSum, cage.numCells)
+                    const remaining = combos.length - cage.eliminatedCombos.length
+                    const isSelected = selectedCageId === cage.id
+                    return (
+                      <motion.button
+                        key={cage.id}
+                        onClick={() => setSelectedCageId(isSelected ? null : cage.id)}
+                        className={`group relative px-3 py-2 rounded-xl text-sm font-medium transition-all ${
+                          isSelected
+                            ? 'bg-primary text-primary-foreground shadow-lg'
+                            : 'bg-secondary hover:bg-secondary/80 text-secondary-foreground'
+                        }`}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>{cage.targetSum}</span>
+                          <span className="text-xs opacity-70">({cage.numCells} cells)</span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                            isSelected ? 'bg-primary-foreground/20' : 'bg-muted'
+                          }`}>
+                            {remaining}/{combos.length}
+                          </span>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDeleteCage(cage.id)
+                          }}
+                          className={`absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity ${
+                            isSelected
+                              ? 'bg-primary-foreground text-primary'
+                              : 'bg-destructive text-destructive-foreground'
+                          }`}
+                        >
+                          <X weight="bold" size={10} />
+                        </button>
+                      </motion.button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {selectedCage ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg font-bold">{selectedCage.targetSum}</span>
+                    <span className="text-sm text-muted-foreground">
+                      in {selectedCage.numCells} cells
+                    </span>
+                  </div>
+                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                    remainingCount === 1
+                      ? 'bg-accent text-accent-foreground'
+                      : remainingCount === 0
+                        ? 'bg-destructive text-destructive-foreground'
+                        : 'bg-secondary text-secondary-foreground'
+                  }`}>
+                    {remainingCount} remaining
+                  </span>
+                </div>
+
+                <div className="text-xs text-muted-foreground">
+                  Click combinations to eliminate/restore them
+                </div>
+
+                <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
+                  {selectedCageCombos.map((combo, idx) => {
+                    const comboKey = getComboKey(combo)
+                    const isEliminated = selectedCage.eliminatedCombos.includes(comboKey)
                     const leftovers = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter(n => !combo.includes(n))
                     return (
-                      <motion.div
-                        key={idx}
+                      <motion.button
+                        key={comboKey}
+                        onClick={() => handleToggleCombo(comboKey)}
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: idx * 0.03 }}
-                        className="p-2 bg-secondary/50 rounded-lg space-y-1.5"
+                        transition={{ delay: idx * 0.02 }}
+                        className={`w-full p-2 rounded-lg space-y-1.5 text-left transition-all ${
+                          isEliminated
+                            ? 'bg-muted/30 opacity-50'
+                            : 'bg-secondary/50 hover:bg-secondary/70'
+                        }`}
                       >
                         <div className="flex items-center gap-1.5">
                           {combo.map((num, numIdx) => (
                             <span
                               key={numIdx}
-                              className="w-7 h-7 flex items-center justify-center bg-white rounded-md text-sm font-bold shadow-sm border border-border"
+                              className={`w-7 h-7 flex items-center justify-center rounded-md text-sm font-bold shadow-sm border transition-all ${
+                                isEliminated
+                                  ? 'bg-muted border-muted-foreground/20 text-muted-foreground line-through'
+                                  : 'bg-white border-border'
+                              }`}
                             >
                               {num}
                             </span>
                           ))}
-                          <span className="ml-auto text-xs text-muted-foreground">
+                          <span className={`ml-auto text-xs ${isEliminated ? 'text-muted-foreground/50 line-through' : 'text-muted-foreground'}`}>
                             = {combo.reduce((a, b) => a + b, 0)}
                           </span>
+                          {isEliminated && (
+                            <span className="text-xs text-destructive font-medium">✗</span>
+                          )}
                         </div>
                         <div className="flex items-center gap-1">
-                          <span className="text-[10px] text-muted-foreground mr-1">Left:</span>
+                          <span className={`text-[10px] mr-1 ${isEliminated ? 'text-muted-foreground/50' : 'text-muted-foreground'}`}>Left:</span>
                           {leftovers.map((num, numIdx) => (
                             <span
                               key={numIdx}
-                              className="w-5 h-5 flex items-center justify-center bg-muted/50 rounded text-[10px] font-medium text-muted-foreground"
+                              className={`w-5 h-5 flex items-center justify-center rounded text-[10px] font-medium ${
+                                isEliminated
+                                  ? 'bg-muted/30 text-muted-foreground/50'
+                                  : 'bg-muted/50 text-muted-foreground'
+                              }`}
                             >
                               {num}
                             </span>
                           ))}
                         </div>
-                      </motion.div>
+                      </motion.button>
                     )
                   })}
                 </div>
-              ) : (
-                <div className="text-center py-6 text-muted-foreground text-sm">
-                  Enter a target sum to see combinations
+
+                <button
+                  onClick={() => setSelectedCageId(null)}
+                  className="w-full py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  ← Back to add new cage
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                      Target Sum
+                    </label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="45"
+                      value={targetSum}
+                      onChange={(e) => setTargetSum(e.target.value)}
+                      placeholder="e.g. 31"
+                      className="h-10"
+                      id="target-sum"
+                    />
+                  </div>
+                  <div className="w-24">
+                    <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                      Cells
+                    </label>
+                    <Input
+                      type="number"
+                      min="2"
+                      max="9"
+                      value={numCells}
+                      onChange={(e) => setNumCells(e.target.value)}
+                      className="h-10"
+                      id="num-cells"
+                    />
+                  </div>
                 </div>
-              )}
-            </div>
+
+                <div className="border-t border-border pt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-foreground">
+                      Possible Combinations
+                    </span>
+                    <span className="text-xs text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">
+                      {combinations.length} found
+                    </span>
+                  </div>
+
+                  {targetSum && combinations.length === 0 ? (
+                    <div className="text-center py-6 text-muted-foreground text-sm">
+                      No valid combinations found
+                    </div>
+                  ) : combinations.length > 0 ? (
+                    <>
+                      <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 mb-3">
+                        {combinations.map((combo, idx) => {
+                          const leftovers = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter(n => !combo.includes(n))
+                          return (
+                            <motion.div
+                              key={idx}
+                              initial={{ opacity: 0, x: -10 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: idx * 0.03 }}
+                              className="p-2 bg-secondary/50 rounded-lg space-y-1.5"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                {combo.map((num, numIdx) => (
+                                  <span
+                                    key={numIdx}
+                                    className="w-7 h-7 flex items-center justify-center bg-white rounded-md text-sm font-bold shadow-sm border border-border"
+                                  >
+                                    {num}
+                                  </span>
+                                ))}
+                                <span className="ml-auto text-xs text-muted-foreground">
+                                  = {combo.reduce((a, b) => a + b, 0)}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] text-muted-foreground mr-1">Left:</span>
+                                {leftovers.map((num, numIdx) => (
+                                  <span
+                                    key={numIdx}
+                                    className="w-5 h-5 flex items-center justify-center bg-muted/50 rounded text-[10px] font-medium text-muted-foreground"
+                                  >
+                                    {num}
+                                  </span>
+                                ))}
+                              </div>
+                            </motion.div>
+                          )
+                        })}
+                      </div>
+                      <Button
+                        onClick={handleAddTrackedCage}
+                        className="w-full gap-2"
+                        size="sm"
+                      >
+                        <Plus weight="bold" size={16} />
+                        Track This Cage
+                      </Button>
+                    </>
+                  ) : (
+                    <div className="text-center py-6 text-muted-foreground text-sm">
+                      Enter a target sum to see combinations
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </motion.div>
       )}
