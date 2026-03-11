@@ -1,8 +1,9 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { ArrowsClockwise, Plus, DotsSixVertical } from '@phosphor-icons/react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { ArrowsClockwise, Plus, DotsSixVertical, Calculator, X } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { useKV } from '@github/spark/hooks'
 
 interface TilePosition {
@@ -30,6 +31,33 @@ const GROUPING_THRESHOLD = 100
 const GRID_COLS = 3
 const GRID_GAP = 16
 const BLOCK_PADDING = 12
+
+function findCombinations(targetSum: number, numCells: number, excludedNumbers: number[] = []): number[][] {
+  const availableNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter(n => !excludedNumbers.includes(n))
+  const results: number[][] = []
+
+  function backtrack(start: number, currentCombo: number[], currentSum: number) {
+    if (currentCombo.length === numCells) {
+      if (currentSum === targetSum) {
+        results.push([...currentCombo])
+      }
+      return
+    }
+
+    if (currentSum >= targetSum) return
+    if (currentCombo.length + (availableNumbers.length - start) < numCells) return
+
+    for (let i = start; i < availableNumbers.length; i++) {
+      const num = availableNumbers[i]
+      currentCombo.push(num)
+      backtrack(i + 1, currentCombo, currentSum + num)
+      currentCombo.pop()
+    }
+  }
+
+  backtrack(0, [], 0)
+  return results
+}
 
 function createBlockPositions(blockIndex: number, startX: number, startY: number): TilePosition[] {
   const positions: TilePosition[] = []
@@ -397,12 +425,139 @@ function CageHandle({
   )
 }
 
+function CombinationCalculator({
+  isOpen,
+  onClose,
+}: {
+  isOpen: boolean
+  onClose: () => void
+}) {
+  const [targetSum, setTargetSum] = useState('')
+  const [numCells, setNumCells] = useState('2')
+
+  const combinations = useMemo(() => {
+    const sum = parseInt(targetSum)
+    const cells = parseInt(numCells)
+    if (isNaN(sum) || isNaN(cells) || sum < 1 || cells < 1 || cells > 9) {
+      return []
+    }
+    return findCombinations(sum, cells)
+  }, [targetSum, numCells])
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0, y: 20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 20, scale: 0.95 }}
+          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+          className="fixed bottom-4 right-4 w-80 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden z-50"
+        >
+          <div className="flex items-center justify-between px-4 py-3 bg-primary text-primary-foreground">
+            <div className="flex items-center gap-2">
+              <Calculator weight="bold" size={20} />
+              <span className="font-semibold">Cage Calculator</span>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-1 rounded-lg hover:bg-primary-foreground/20 transition-colors"
+            >
+              <X weight="bold" size={18} />
+            </button>
+          </div>
+
+          <div className="p-4 space-y-4">
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                  Target Sum
+                </label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="45"
+                  value={targetSum}
+                  onChange={(e) => setTargetSum(e.target.value)}
+                  placeholder="e.g. 15"
+                  className="h-10"
+                  id="target-sum"
+                />
+              </div>
+              <div className="w-24">
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                  Cells
+                </label>
+                <Input
+                  type="number"
+                  min="2"
+                  max="9"
+                  value={numCells}
+                  onChange={(e) => setNumCells(e.target.value)}
+                  className="h-10"
+                  id="num-cells"
+                />
+              </div>
+            </div>
+
+            <div className="border-t border-border pt-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-foreground">
+                  Possible Combinations
+                </span>
+                <span className="text-xs text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">
+                  {combinations.length} found
+                </span>
+              </div>
+
+              {targetSum && combinations.length === 0 ? (
+                <div className="text-center py-6 text-muted-foreground text-sm">
+                  No valid combinations found
+                </div>
+              ) : combinations.length > 0 ? (
+                <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                  {combinations.map((combo, idx) => (
+                    <motion.div
+                      key={idx}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: idx * 0.03 }}
+                      className="flex items-center gap-1.5 p-2 bg-secondary/50 rounded-lg"
+                    >
+                      {combo.map((num, numIdx) => (
+                        <span
+                          key={numIdx}
+                          className="w-7 h-7 flex items-center justify-center bg-white rounded-md text-sm font-bold shadow-sm border border-border"
+                        >
+                          {num}
+                        </span>
+                      ))}
+                      <span className="ml-auto text-xs text-muted-foreground">
+                        = {combo.reduce((a, b) => a + b, 0)}
+                      </span>
+                    </motion.div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6 text-muted-foreground text-sm">
+                  Enter a target sum to see combinations
+                </div>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
 export default function App() {
   const boardRef = useRef<HTMLDivElement>(null)
   const [positions, setPositions] = useKV<TilePosition[]>('tile-positions', getInitialPositions())
   const [blockCount, setBlockCount] = useKV<number>('block-count', 1)
   const [cages, setCages] = useState<Cage[]>([])
   const [blocks, setBlocks] = useState<Block[]>([])
+  const [isCalculatorOpen, setIsCalculatorOpen] = useState(false)
 
   useEffect(() => {
     const currentPositions = positions ?? []
@@ -531,6 +686,14 @@ export default function App() {
             </p>
           </div>
           <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => setIsCalculatorOpen(!isCalculatorOpen)}
+              className="gap-2"
+            >
+              <Calculator weight="bold" />
+              Calculator
+            </Button>
             <Button variant="default" onClick={handleAddBlock} className="gap-2">
               <Plus weight="bold" />
               Add Block
@@ -613,6 +776,11 @@ export default function App() {
           <p>Tip: Use the grip icon to drag entire blocks. Blocks cannot overlap!</p>
         </div>
       </div>
+
+      <CombinationCalculator
+        isOpen={isCalculatorOpen}
+        onClose={() => setIsCalculatorOpen(false)}
+      />
     </div>
   )
 }
