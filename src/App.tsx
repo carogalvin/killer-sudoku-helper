@@ -516,27 +516,43 @@ function CombinationCalculator({
                 </div>
               ) : combinations.length > 0 ? (
                 <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                  {combinations.map((combo, idx) => (
-                    <motion.div
-                      key={idx}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: idx * 0.03 }}
-                      className="flex items-center gap-1.5 p-2 bg-secondary/50 rounded-lg"
-                    >
-                      {combo.map((num, numIdx) => (
-                        <span
-                          key={numIdx}
-                          className="w-7 h-7 flex items-center justify-center bg-white rounded-md text-sm font-bold shadow-sm border border-border"
-                        >
-                          {num}
-                        </span>
-                      ))}
-                      <span className="ml-auto text-xs text-muted-foreground">
-                        = {combo.reduce((a, b) => a + b, 0)}
-                      </span>
-                    </motion.div>
-                  ))}
+                  {combinations.map((combo, idx) => {
+                    const leftovers = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter(n => !combo.includes(n))
+                    return (
+                      <motion.div
+                        key={idx}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: idx * 0.03 }}
+                        className="p-2 bg-secondary/50 rounded-lg space-y-1.5"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          {combo.map((num, numIdx) => (
+                            <span
+                              key={numIdx}
+                              className="w-7 h-7 flex items-center justify-center bg-white rounded-md text-sm font-bold shadow-sm border border-border"
+                            >
+                              {num}
+                            </span>
+                          ))}
+                          <span className="ml-auto text-xs text-muted-foreground">
+                            = {combo.reduce((a, b) => a + b, 0)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-muted-foreground mr-1">Left:</span>
+                          {leftovers.map((num, numIdx) => (
+                            <span
+                              key={numIdx}
+                              className="w-5 h-5 flex items-center justify-center bg-muted/50 rounded text-[10px] font-medium text-muted-foreground"
+                            >
+                              {num}
+                            </span>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )
+                  })}
                 </div>
               ) : (
                 <div className="text-center py-6 text-muted-foreground text-sm">
