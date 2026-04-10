@@ -46,11 +46,12 @@ function getComboKey(combo: number[]): string {
   return combo.join('-')
 }
 
-function CageCard({ cage, onSelect, onDelete, onEditLabel }: {
+function CageCard({ cage, onSelect, onDelete, onEditLabel, onEliminateCombo }: {
   cage: TrackedCage
   onSelect: () => void
   onDelete: () => void
   onEditLabel: (newLabel: string) => void
+  onEliminateCombo: (comboKey: string) => void
 }) {
   const [isEditingLabel, setIsEditingLabel] = useState(false)
   const [labelInput, setLabelInput] = useState(cage.label)
@@ -68,6 +69,11 @@ function CageCard({ cage, onSelect, onDelete, onEditLabel }: {
     setIsEditingLabel(false)
   }
 
+  const handleComboClick = (e: React.MouseEvent, combo: number[]) => {
+    e.stopPropagation()
+    onEliminateCombo(getComboKey(combo))
+  }
+
   return (
     <motion.div
       layout
@@ -76,8 +82,8 @@ function CageCard({ cage, onSelect, onDelete, onEditLabel }: {
       exit={{ opacity: 0, scale: 0.9 }}
       transition={{ type: 'spring', damping: 20, stiffness: 300 }}
     >
-      <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={onSelect}>
-        <CardHeader className="pb-3">
+      <Card className="hover:shadow-lg transition-shadow">
+        <CardHeader className="pb-3 cursor-pointer" onClick={onSelect}>
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
               {isEditingLabel ? (
@@ -126,7 +132,7 @@ function CageCard({ cage, onSelect, onDelete, onEditLabel }: {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 cursor-pointer" onClick={onSelect}>
             <div className="text-center">
               <div className="text-3xl font-bold text-primary">{cage.targetSum}</div>
               <div className="text-xs text-muted-foreground">Sum</div>
@@ -151,29 +157,33 @@ function CageCard({ cage, onSelect, onDelete, onEditLabel }: {
           </div>
           
           {remainingCount === 1 && (
-            <div className="flex items-center gap-2 p-2 bg-accent/10 rounded-lg border border-accent">
+            <div className="flex items-center gap-2 p-2 bg-accent/10 rounded-lg border border-accent cursor-pointer" onClick={onSelect}>
               <CheckCircle weight="fill" size={16} className="text-accent" />
               <span className="text-sm font-medium text-accent-foreground">Only one combination left!</span>
             </div>
           )}
 
           <div className="space-y-2">
-            <div className="text-xs font-medium text-muted-foreground">Remaining possibilities:</div>
+            <div className="text-xs font-medium text-muted-foreground">Remaining possibilities (click to eliminate):</div>
             <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
               {remainingCombinations.map((combo, idx) => (
-                <div
+                <button
                   key={idx}
-                  className="flex items-center gap-1.5 p-1.5 bg-secondary/50 rounded-lg"
+                  onClick={(e) => handleComboClick(e, combo)}
+                  className="w-full flex items-center gap-1.5 p-1.5 bg-secondary/50 hover:bg-destructive/10 rounded-lg transition-colors group"
                 >
                   {combo.map((num, numIdx) => (
                     <span
                       key={numIdx}
-                      className="w-7 h-7 flex items-center justify-center rounded bg-white border border-border text-sm font-bold shadow-sm"
+                      className="w-7 h-7 flex items-center justify-center rounded bg-white border border-border text-sm font-bold shadow-sm group-hover:border-destructive/50 transition-colors"
                     >
                       {num}
                     </span>
                   ))}
-                </div>
+                  <span className="ml-auto text-destructive opacity-0 group-hover:opacity-100 transition-opacity font-bold text-sm">
+                    ✗
+                  </span>
+                </button>
               ))}
             </div>
           </div>
@@ -393,6 +403,18 @@ export default function App() {
     setTrackedCages(prev => (prev ?? []).map(c => c.id === cageId ? { ...c, label: newLabel } : c))
   }
 
+  const handleEliminateCombo = (cageId: string, comboKey: string) => {
+    setTrackedCages(prev => (prev ?? []).map(c => {
+      if (c.id === cageId) {
+        return {
+          ...c,
+          eliminatedCombos: [...c.eliminatedCombos, comboKey]
+        }
+      }
+      return c
+    }))
+  }
+
   if (selectedCage) {
     return (
       <div className="min-h-screen bg-background p-4 md:p-8">
@@ -528,6 +550,7 @@ export default function App() {
                   onSelect={() => setSelectedCageId(cage.id)}
                   onDelete={() => handleDeleteCage(cage.id)}
                   onEditLabel={(newLabel) => handleEditLabel(cage.id, newLabel)}
+                  onEliminateCombo={(comboKey) => handleEliminateCombo(cage.id, comboKey)}
                 />
               ))}
             </AnimatePresence>
