@@ -56,7 +56,10 @@ function CageCard({ cage, onSelect, onDelete, onEditLabel }: {
   const [labelInput, setLabelInput] = useState(cage.label)
 
   const combinations = useMemo(() => findCombinations(cage.targetSum, cage.numCells), [cage.targetSum, cage.numCells])
-  const remainingCount = combinations.length - cage.eliminatedCombos.length
+  const remainingCombinations = useMemo(() => {
+    return combinations.filter(combo => !cage.eliminatedCombos.includes(getComboKey(combo)))
+  }, [combinations, cage.eliminatedCombos])
+  const remainingCount = remainingCombinations.length
 
   const handleSaveLabel = () => {
     if (labelInput.trim()) {
@@ -153,6 +156,27 @@ function CageCard({ cage, onSelect, onDelete, onEditLabel }: {
               <span className="text-sm font-medium text-accent-foreground">Only one combination left!</span>
             </div>
           )}
+
+          <div className="space-y-2">
+            <div className="text-xs font-medium text-muted-foreground">Remaining possibilities:</div>
+            <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+              {remainingCombinations.map((combo, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center gap-1.5 p-1.5 bg-secondary/50 rounded-lg"
+                >
+                  {combo.map((num, numIdx) => (
+                    <span
+                      key={numIdx}
+                      className="w-7 h-7 flex items-center justify-center rounded bg-white border border-border text-sm font-bold shadow-sm"
+                    >
+                      {num}
+                    </span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
         </CardContent>
       </Card>
     </motion.div>
