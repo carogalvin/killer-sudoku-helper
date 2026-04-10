@@ -1,39 +1,22 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowsClockwise, Plus, DotsSixVertical, Calculator, X } from '@phosphor-icons/react'
+import { Plus, X, Tag, Pencil, Trash, CheckCircle } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { useKV } from '@github/spark/hooks'
+import { toast } from 'sonner'
 
-interface TilePosition {
+interface TrackedCage {
   id: string
-  value: number
-  x: number
-  y: number
-  blockIndex: number
+  label: string
+  targetSum: number
+  numCells: number
+  eliminatedCombos: string[]
 }
 
-interface Block {
-  index: number
-  tiles: TilePosition[]
-  bounds: { minX: number; minY: number; maxX: number; maxY: number }
-}
-
-interface Cage {
-  tiles: { id: string; value: number }[]
-  sum: number
-  bounds: { minX: number; minY: number; maxX: number; maxY: number }
-}
-
-const TILE_SIZE = 64
-const GROUPING_THRESHOLD = 100
-const GRID_COLS = 3
-const GRID_GAP = 16
-const BLOCK_PADDING = 12
-
-function findCombinations(targetSum: number, numCells: number, excludedNumbers: number[] = []): number[][] {
-  const availableNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter(n => !excludedNumbers.includes(n))
+function findCombinations(targetSum: number, numCells: number): number[][] {
+  const availableNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9]
   const results: number[][] = []
 
   function backtrack(start: number, currentCombo: number[], currentSum: number) {
@@ -59,963 +42,474 @@ function findCombinations(targetSum: number, numCells: number, excludedNumbers: 
   return results
 }
 
-function createBlockPositions(blockIndex: number, startX: number, startY: number): TilePosition[] {
-  const positions: TilePosition[] = []
-  for (let i = 1; i <= 9; i++) {
-    const col = (i - 1) % GRID_COLS
-    const row = Math.floor((i - 1) / GRID_COLS)
-    positions.push({
-      id: `block-${blockIndex}-tile-${i}`,
-      value: i,
-      x: startX + col * (TILE_SIZE + GRID_GAP),
-      y: startY + row * (TILE_SIZE + GRID_GAP),
-      blockIndex,
-    })
-  }
-  return positions
+function getComboKey(combo: number[]): string {
+  return combo.join('-')
 }
 
-function getInitialPositions(): TilePosition[] {
-  return createBlockPositions(0, 40, 40)
-}
-
-function getBlockBounds(tiles: TilePosition[]): { minX: number; minY: number; maxX: number; maxY: number } {
-  const xs = tiles.map((t) => t.x)
-  const ys = tiles.map((t) => t.y)
-  return {
-    minX: Math.min(...xs) - BLOCK_PADDING,
-    minY: Math.min(...ys) - BLOCK_PADDING,
-    maxX: Math.max(...xs) + TILE_SIZE + BLOCK_PADDING,
-    maxY: Math.max(...ys) + TILE_SIZE + BLOCK_PADDING,
-  }
-}
-
-function getBlocks(positions: TilePosition[]): Block[] {
-  const blockMap = new Map<number, TilePosition[]>()
-  for (const pos of positions) {
-    const existing = blockMap.get(pos.blockIndex) || []
-    existing.push(pos)
-    blockMap.set(pos.blockIndex, existing)
-  }
-  
-  const blocks: Block[] = []
-  for (const [index, tiles] of blockMap) {
-    blocks.push({
-      index,
-      tiles,
-      bounds: getBlockBounds(tiles),
-    })
-  }
-  return blocks
-}
-
-function boundsOverlap(a: Block['bounds'], b: Block['bounds'], padding = 8): boolean {
-  return !(
-    a.maxX + padding < b.minX ||
-    b.maxX + padding < a.minX ||
-    a.maxY + padding < b.minY ||
-    b.maxY + padding < a.minY
-  )
-}
-
-function findCages(positions: TilePosition[]): Cage[] {
-  const visited = new Set<string>()
-  const cages: Cage[] = []
-
-  for (const pos of positions) {
-    if (visited.has(pos.id)) continue
-
-    const group: TilePosition[] = [pos]
-    visited.add(pos.id)
-
-    let i = 0
-    while (i < group.length) {
-      const current = group[i]
-      for (const other of positions) {
-        if (visited.has(other.id)) continue
-        const dx = current.x - other.x
-        const dy = current.y - other.y
-        const distance = Math.sqrt(dx * dx + dy * dy)
-        if (distance < GROUPING_THRESHOLD) {
-          group.push(other)
-          visited.add(other.id)
-        }
-      }
-      i++
-    }
-
-    if (group.length > 1) {
-      const tiles = group.map((t) => ({ id: t.id, value: t.value ?? 0 }))
-      const sum = tiles.reduce((acc, t) => acc + (Number(t.value) || 0), 0)
-      const xs = group.map((t) => t.x)
-      const ys = group.map((t) => t.y)
-      cages.push({
-        tiles,
-        sum,
-        bounds: {
-          minX: Math.min(...xs) - 8,
-          minY: Math.min(...ys) - 8,
-          maxX: Math.max(...xs) + TILE_SIZE + 8,
-          maxY: Math.max(...ys) + TILE_SIZE + 8,
-        },
-      })
-    }
-  }
-
-  return cages
-}
-
-function NumberTile({
-  id,
-  value,
-  x,
-  y,
-  onDragEnd,
-  constraintsRef,
-}: {
-  id: string
-  value: number
-  x: number
-  y: number
-  onDragEnd: (id: string, x: number, y: number) => void
-  constraintsRef: React.RefObject<HTMLDivElement | null>
+function CageCard({ cage, onSelect, onDelete, onEditLabel }: {
+  cage: TrackedCage
+  onSelect: () => void
+  onDelete: () => void
+  onEditLabel: (newLabel: string) => void
 }) {
-  const [isDragging, setIsDragging] = useState(false)
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
+  const [isEditingLabel, setIsEditingLabel] = useState(false)
+  const [labelInput, setLabelInput] = useState(cage.label)
+
+  const combinations = useMemo(() => findCombinations(cage.targetSum, cage.numCells), [cage.targetSum, cage.numCells])
+  const remainingCount = combinations.length - cage.eliminatedCombos.length
+
+  const handleSaveLabel = () => {
+    if (labelInput.trim()) {
+      onEditLabel(labelInput.trim())
+    }
+    setIsEditingLabel(false)
+  }
 
   return (
     <motion.div
-      drag
-      dragConstraints={constraintsRef}
-      dragMomentum={false}
-      dragElastic={0}
-      animate={{ x: dragOffset.x, y: dragOffset.y }}
-      transition={{ type: 'tween', duration: 0 }}
-      onDragStart={() => setIsDragging(true)}
-      onDrag={(_, info) => {
-        setDragOffset({ x: info.offset.x, y: info.offset.y })
-      }}
-      onDragEnd={(_, info) => {
-        setIsDragging(false)
-        const newX = x + info.offset.x
-        const newY = y + info.offset.y
-        setDragOffset({ x: 0, y: 0 })
-        onDragEnd(id, newX, newY)
-      }}
-      className="absolute cursor-grab active:cursor-grabbing select-none"
-      style={{ 
-        width: TILE_SIZE, 
-        height: TILE_SIZE, 
-        left: x, 
-        top: y,
-        zIndex: isDragging ? 50 : 10,
-      }}
-      whileHover={{ scale: 1.05 }}
-      whileTap={{ scale: 1.1 }}
+      layout
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      transition={{ type: 'spring', damping: 20, stiffness: 300 }}
     >
-      <div
-        className={`w-full h-full rounded-xl flex items-center justify-center text-3xl font-bold transition-shadow duration-150 ${
-          isDragging
-            ? 'bg-primary text-primary-foreground shadow-2xl'
-            : 'bg-white shadow-lg hover:shadow-xl border border-border'
-        }`}
-      >
-        <span className={isDragging ? 'text-primary-foreground' : 'text-slate-800'}>{value}</span>
-      </div>
-    </motion.div>
-  )
-}
-
-function BlockHandle({
-  block,
-  onDragEnd,
-  constraintsRef,
-  allBlocks,
-}: {
-  block: Block
-  onDragEnd: (blockIndex: number, deltaX: number, deltaY: number) => void
-  constraintsRef: React.RefObject<HTMLDivElement | null>
-  allBlocks: Block[]
-}) {
-  const [isDragging, setIsDragging] = useState(false)
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
-  const [isOverlapping, setIsOverlapping] = useState(false)
-
-  const width = block.bounds.maxX - block.bounds.minX
-  const height = block.bounds.maxY - block.bounds.minY
-
-  const checkOverlap = useCallback((offsetX: number, offsetY: number) => {
-    const movedBounds = {
-      minX: block.bounds.minX + offsetX,
-      minY: block.bounds.minY + offsetY,
-      maxX: block.bounds.maxX + offsetX,
-      maxY: block.bounds.maxY + offsetY,
-    }
-    
-    for (const other of allBlocks) {
-      if (other.index === block.index) continue
-      if (boundsOverlap(movedBounds, other.bounds)) {
-        return true
-      }
-    }
-    return false
-  }, [block, allBlocks])
-
-  return (
-    <motion.div
-      drag
-      dragConstraints={constraintsRef}
-      dragMomentum={false}
-      dragElastic={0}
-      animate={{ x: dragOffset.x, y: dragOffset.y }}
-      transition={{ type: 'tween', duration: 0 }}
-      onDragStart={() => setIsDragging(true)}
-      onDrag={(_, info) => {
-        setDragOffset({ x: info.offset.x, y: info.offset.y })
-        setIsOverlapping(checkOverlap(info.offset.x, info.offset.y))
-      }}
-      onDragEnd={(_, info) => {
-        setIsDragging(false)
-        const wouldOverlap = checkOverlap(info.offset.x, info.offset.y)
-        setDragOffset({ x: 0, y: 0 })
-        setIsOverlapping(false)
-        
-        if (!wouldOverlap) {
-          onDragEnd(block.index, info.offset.x, info.offset.y)
-        }
-      }}
-      className="absolute cursor-grab active:cursor-grabbing select-none"
-      style={{
-        left: block.bounds.minX,
-        top: block.bounds.minY,
-        width,
-        height,
-        zIndex: isDragging ? 40 : 5,
-      }}
-    >
-      <div
-        className={`w-full h-full rounded-2xl border-2 transition-all duration-150 ${
-          isDragging
-            ? isOverlapping
-              ? 'border-destructive bg-destructive/10 shadow-xl'
-              : 'border-primary bg-primary/5 shadow-xl'
-            : 'border-transparent hover:border-muted-foreground/30 hover:bg-muted/30'
-        }`}
-      >
-        <div
-          className={`absolute top-2 left-2 p-1 rounded-lg transition-colors ${
-            isDragging
-              ? isOverlapping
-                ? 'bg-destructive text-destructive-foreground'
-                : 'bg-primary text-primary-foreground'
-              : 'bg-muted text-muted-foreground'
-          }`}
-        >
-          <DotsSixVertical weight="bold" size={16} />
-        </div>
-        {isDragging && isOverlapping && (
-          <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded bg-destructive text-destructive-foreground text-xs font-medium whitespace-nowrap">
-            Cannot overlap!
+      <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={onSelect}>
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              {isEditingLabel ? (
+                <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                  <Input
+                    value={labelInput}
+                    onChange={(e) => setLabelInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveLabel()
+                      if (e.key === 'Escape') {
+                        setLabelInput(cage.label)
+                        setIsEditingLabel(false)
+                      }
+                    }}
+                    onBlur={handleSaveLabel}
+                    autoFocus
+                    className="h-8"
+                    placeholder="Cage label"
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Tag weight="fill" size={16} className="text-primary flex-shrink-0" />
+                  <CardTitle className="text-lg truncate">{cage.label}</CardTitle>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setIsEditingLabel(true)
+                    }}
+                    className="p-1 hover:bg-secondary rounded transition-colors flex-shrink-0"
+                  >
+                    <Pencil size={14} className="text-muted-foreground" />
+                  </button>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete()
+              }}
+              className="p-1.5 hover:bg-destructive/10 rounded-lg transition-colors flex-shrink-0"
+            >
+              <Trash weight="bold" size={18} className="text-destructive" />
+            </button>
           </div>
-        )}
-      </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-4">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-primary">{cage.targetSum}</div>
+              <div className="text-xs text-muted-foreground">Sum</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold">{cage.numCells}</div>
+              <div className="text-xs text-muted-foreground">Cells</div>
+            </div>
+            <div className="flex-1" />
+            <div className="text-right">
+              <div className={`text-2xl font-bold ${
+                remainingCount === 1 ? 'text-accent' :
+                remainingCount === 0 ? 'text-destructive' :
+                'text-foreground'
+              }`}>
+                {remainingCount}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                of {combinations.length} left
+              </div>
+            </div>
+          </div>
+          
+          {remainingCount === 1 && (
+            <div className="flex items-center gap-2 p-2 bg-accent/10 rounded-lg border border-accent">
+              <CheckCircle weight="fill" size={16} className="text-accent" />
+              <span className="text-sm font-medium text-accent-foreground">Only one combination left!</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </motion.div>
   )
 }
 
-function CageHandle({
-  cage,
-  cageIndex,
-  onDragEnd,
-  constraintsRef,
-  allCages,
-}: {
-  cage: Cage
-  cageIndex: number
-  onDragEnd: (tileIds: string[], deltaX: number, deltaY: number) => void
-  constraintsRef: React.RefObject<HTMLDivElement | null>
-  allCages: Cage[]
+function CageDetailView({ cage, onBack, onUpdate }: {
+  cage: TrackedCage
+  onBack: () => void
+  onUpdate: (updatedCage: TrackedCage) => void
 }) {
-  const [isDragging, setIsDragging] = useState(false)
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
-  const [isOverlapping, setIsOverlapping] = useState(false)
+  const combinations = useMemo(() => findCombinations(cage.targetSum, cage.numCells), [cage.targetSum, cage.numCells])
 
-  const width = cage.bounds.maxX - cage.bounds.minX
-  const height = cage.bounds.maxY - cage.bounds.minY
+  const handleToggleCombo = (comboKey: string) => {
+    const isEliminated = cage.eliminatedCombos.includes(comboKey)
+    const updatedCage = {
+      ...cage,
+      eliminatedCombos: isEliminated
+        ? cage.eliminatedCombos.filter(k => k !== comboKey)
+        : [...cage.eliminatedCombos, comboKey],
+    }
+    onUpdate(updatedCage)
+  }
 
-  const checkOverlap = useCallback((offsetX: number, offsetY: number) => {
-    const movedBounds = {
-      minX: cage.bounds.minX + offsetX,
-      minY: cage.bounds.minY + offsetY,
-      maxX: cage.bounds.maxX + offsetX,
-      maxY: cage.bounds.maxY + offsetY,
-    }
-    
-    for (let i = 0; i < allCages.length; i++) {
-      if (i === cageIndex) continue
-      if (boundsOverlap(movedBounds, allCages[i].bounds)) {
-        return true
-      }
-    }
-    return false
-  }, [cage, cageIndex, allCages])
+  const remainingCount = combinations.length - cage.eliminatedCombos.length
 
   return (
     <motion.div
-      drag
-      dragConstraints={constraintsRef}
-      dragMomentum={false}
-      dragElastic={0}
-      animate={{ x: dragOffset.x, y: dragOffset.y }}
-      transition={{ type: 'tween', duration: 0 }}
-      onDragStart={() => setIsDragging(true)}
-      onDrag={(_, info) => {
-        setDragOffset({ x: info.offset.x, y: info.offset.y })
-        setIsOverlapping(checkOverlap(info.offset.x, info.offset.y))
-      }}
-      onDragEnd={(_, info) => {
-        setIsDragging(false)
-        const wouldOverlap = checkOverlap(info.offset.x, info.offset.y)
-        setDragOffset({ x: 0, y: 0 })
-        setIsOverlapping(false)
-        
-        if (!wouldOverlap) {
-          onDragEnd(cage.tiles.map(t => t.id), info.offset.x, info.offset.y)
-        }
-      }}
-      className="absolute cursor-grab active:cursor-grabbing select-none"
-      style={{
-        left: cage.bounds.minX,
-        top: cage.bounds.minY,
-        width,
-        height,
-        zIndex: isDragging ? 45 : 2,
-      }}
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="space-y-4"
     >
-      <div
-        className={`w-full h-full rounded-2xl border-2 border-dashed transition-all duration-150 ${
-          isDragging
-            ? isOverlapping
-              ? 'border-destructive bg-destructive/10 shadow-xl'
-              : 'border-accent bg-accent/20 shadow-xl'
-            : 'border-accent bg-accent/10 hover:bg-accent/20'
-        }`}
-      >
-        <div
-          className={`absolute top-2 right-2 p-1 rounded-lg transition-colors ${
-            isDragging
-              ? isOverlapping
-                ? 'bg-destructive text-destructive-foreground'
-                : 'bg-accent text-accent-foreground'
-              : 'bg-accent text-accent-foreground'
-          }`}
-        >
-          <DotsSixVertical weight="bold" size={16} />
+      <div className="flex items-center gap-3">
+        <Button variant="outline" size="sm" onClick={onBack}>
+          ← Back
+        </Button>
+        <div className="flex items-center gap-2">
+          <Tag weight="fill" size={20} className="text-primary" />
+          <h2 className="text-2xl font-bold">{cage.label}</h2>
         </div>
-        <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-accent text-accent-foreground text-sm font-medium shadow-md whitespace-nowrap">
-          Σ = {cage.sum}
-        </div>
-        {isDragging && isOverlapping && (
-          <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded bg-destructive text-destructive-foreground text-xs font-medium whitespace-nowrap">
-            Cannot overlap!
-          </div>
-        )}
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-6">
+              <div>
+                <div className="text-sm text-muted-foreground">Target Sum</div>
+                <div className="text-3xl font-bold text-primary">{cage.targetSum}</div>
+              </div>
+              <div>
+                <div className="text-sm text-muted-foreground">Number of Cells</div>
+                <div className="text-3xl font-bold">{cage.numCells}</div>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className={`text-4xl font-bold ${
+                remainingCount === 1 ? 'text-accent' :
+                remainingCount === 0 ? 'text-destructive' :
+                'text-foreground'
+              }`}>
+                {remainingCount}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                of {combinations.length} remaining
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="text-sm text-muted-foreground mb-4">
+            Click combinations to eliminate or restore them
+          </div>
+          
+          <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2">
+            {combinations.map((combo, idx) => {
+              const comboKey = getComboKey(combo)
+              const isEliminated = cage.eliminatedCombos.includes(comboKey)
+              const leftovers = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter(n => !combo.includes(n))
+              
+              return (
+                <motion.button
+                  key={comboKey}
+                  onClick={() => handleToggleCombo(comboKey)}
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.01 }}
+                  className={`w-full p-3 rounded-xl space-y-2 text-left transition-all ${
+                    isEliminated
+                      ? 'bg-muted/30 opacity-50 hover:opacity-70'
+                      : 'bg-secondary hover:bg-secondary/80 shadow-sm'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {combo.map((num, numIdx) => (
+                      <span
+                        key={numIdx}
+                        className={`w-10 h-10 flex items-center justify-center rounded-lg text-lg font-bold shadow-sm border transition-all ${
+                          isEliminated
+                            ? 'bg-muted border-muted-foreground/20 text-muted-foreground line-through'
+                            : 'bg-white border-border'
+                        }`}
+                      >
+                        {num}
+                      </span>
+                    ))}
+                    <span className={`ml-auto text-sm font-medium ${
+                      isEliminated ? 'text-muted-foreground/50 line-through' : 'text-muted-foreground'
+                    }`}>
+                      = {combo.reduce((a, b) => a + b, 0)}
+                    </span>
+                    {isEliminated && (
+                      <span className="text-destructive font-bold">✗</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-xs ${isEliminated ? 'text-muted-foreground/50' : 'text-muted-foreground'}`}>
+                      Leftovers:
+                    </span>
+                    {leftovers.map((num, numIdx) => (
+                      <span
+                        key={numIdx}
+                        className={`w-6 h-6 flex items-center justify-center rounded text-xs font-medium ${
+                          isEliminated
+                            ? 'bg-muted/30 text-muted-foreground/50'
+                            : 'bg-muted/60 text-muted-foreground'
+                        }`}
+                      >
+                        {num}
+                      </span>
+                    ))}
+                  </div>
+                </motion.button>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
     </motion.div>
   )
 }
 
-interface TrackedCage {
-  id: string
-  targetSum: number
-  numCells: number
-  eliminatedCombos: string[]
-}
-
-function CombinationCalculator({
-  isOpen,
-  onClose,
-}: {
-  isOpen: boolean
-  onClose: () => void
-}) {
-  const [targetSum, setTargetSum] = useState('')
-  const [numCells, setNumCells] = useState('2')
-  const [trackedCages, setTrackedCages] = useKV<TrackedCage[]>('tracked-cages', [])
+export default function App() {
+  const [trackedCages, setTrackedCages] = useKV<TrackedCage[]>('tracked-cages-v2', [])
   const [selectedCageId, setSelectedCageId] = useState<string | null>(null)
-
-  const combinations = useMemo(() => {
-    const sum = parseInt(targetSum)
-    const cells = parseInt(numCells)
-    if (isNaN(sum) || isNaN(cells) || sum < 1 || cells < 1 || cells > 9) {
-      return []
-    }
-    return findCombinations(sum, cells)
-  }, [targetSum, numCells])
+  const [isAddingCage, setIsAddingCage] = useState(false)
+  const [newLabel, setNewLabel] = useState('')
+  const [newSum, setNewSum] = useState('')
+  const [newCells, setNewCells] = useState('2')
 
   const selectedCage = useMemo(() => {
     return (trackedCages ?? []).find(c => c.id === selectedCageId)
   }, [trackedCages, selectedCageId])
 
-  const selectedCageCombos = useMemo(() => {
-    if (!selectedCage) return []
-    return findCombinations(selectedCage.targetSum, selectedCage.numCells)
-  }, [selectedCage])
+  const handleAddCage = () => {
+    const sum = parseInt(newSum)
+    const cells = parseInt(newCells)
+    
+    if (!newLabel.trim()) {
+      toast.error('Please enter a label')
+      return
+    }
+    
+    if (isNaN(sum) || sum < 1 || sum > 45) {
+      toast.error('Sum must be between 1 and 45')
+      return
+    }
+    
+    if (isNaN(cells) || cells < 2 || cells > 9) {
+      toast.error('Cells must be between 2 and 9')
+      return
+    }
 
-  const handleAddTrackedCage = () => {
-    const sum = parseInt(targetSum)
-    const cells = parseInt(numCells)
-    if (isNaN(sum) || isNaN(cells) || sum < 1 || cells < 1 || cells > 9) return
-    if (combinations.length === 0) return
+    const combinations = findCombinations(sum, cells)
+    if (combinations.length === 0) {
+      toast.error('No valid combinations exist for this sum and cell count')
+      return
+    }
 
     const newCage: TrackedCage = {
       id: `cage-${Date.now()}`,
+      label: newLabel.trim(),
       targetSum: sum,
       numCells: cells,
       eliminatedCombos: [],
     }
-    setTrackedCages(prev => [...(prev ?? []), newCage])
-    setSelectedCageId(newCage.id)
-    setTargetSum('')
-    setNumCells('2')
-  }
 
-  const handleToggleCombo = (comboKey: string) => {
-    if (!selectedCageId) return
-    setTrackedCages(prev => {
-      return (prev ?? []).map(cage => {
-        if (cage.id !== selectedCageId) return cage
-        const isEliminated = cage.eliminatedCombos.includes(comboKey)
-        return {
-          ...cage,
-          eliminatedCombos: isEliminated
-            ? cage.eliminatedCombos.filter(k => k !== comboKey)
-            : [...cage.eliminatedCombos, comboKey],
-        }
-      })
-    })
+    setTrackedCages(prev => [...(prev ?? []), newCage])
+    toast.success(`Added cage "${newLabel}"`)
+    
+    setNewLabel('')
+    setNewSum('')
+    setNewCells('2')
+    setIsAddingCage(false)
   }
 
   const handleDeleteCage = (cageId: string) => {
+    const cage = (trackedCages ?? []).find(c => c.id === cageId)
     setTrackedCages(prev => (prev ?? []).filter(c => c.id !== cageId))
     if (selectedCageId === cageId) {
       setSelectedCageId(null)
     }
+    if (cage) {
+      toast.success(`Deleted "${cage.label}"`)
+    }
   }
 
-  const getComboKey = (combo: number[]) => combo.join('-')
-
-  const remainingCount = selectedCage
-    ? selectedCageCombos.length - selectedCage.eliminatedCombos.length
-    : 0
-
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          initial={{ opacity: 0, y: 20, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 20, scale: 0.95 }}
-          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className="fixed bottom-4 right-4 w-96 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden z-50"
-        >
-          <div className="flex items-center justify-between px-4 py-3 bg-primary text-primary-foreground">
-            <div className="flex items-center gap-2">
-              <Calculator weight="bold" size={20} />
-              <span className="font-semibold">Cage Calculator</span>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-1 rounded-lg hover:bg-primary-foreground/20 transition-colors"
-            >
-              <X weight="bold" size={18} />
-            </button>
-          </div>
-
-          <div className="p-4 space-y-4">
-            {(trackedCages ?? []).length > 0 && (
-              <div className="space-y-2">
-                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Tracked Cages
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {(trackedCages ?? []).map(cage => {
-                    const combos = findCombinations(cage.targetSum, cage.numCells)
-                    const remaining = combos.length - cage.eliminatedCombos.length
-                    const isSelected = selectedCageId === cage.id
-                    return (
-                      <motion.button
-                        key={cage.id}
-                        onClick={() => setSelectedCageId(isSelected ? null : cage.id)}
-                        className={`group relative px-3 py-2 rounded-xl text-sm font-medium transition-all ${
-                          isSelected
-                            ? 'bg-primary text-primary-foreground shadow-lg'
-                            : 'bg-secondary hover:bg-secondary/80 text-secondary-foreground'
-                        }`}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span>{cage.targetSum}</span>
-                          <span className="text-xs opacity-70">({cage.numCells} cells)</span>
-                          <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                            isSelected ? 'bg-primary-foreground/20' : 'bg-muted'
-                          }`}>
-                            {remaining}/{combos.length}
-                          </span>
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleDeleteCage(cage.id)
-                          }}
-                          className={`absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity ${
-                            isSelected
-                              ? 'bg-primary-foreground text-primary'
-                              : 'bg-destructive text-destructive-foreground'
-                          }`}
-                        >
-                          <X weight="bold" size={10} />
-                        </button>
-                      </motion.button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            {selectedCage ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg font-bold">{selectedCage.targetSum}</span>
-                    <span className="text-sm text-muted-foreground">
-                      in {selectedCage.numCells} cells
-                    </span>
-                  </div>
-                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                    remainingCount === 1
-                      ? 'bg-accent text-accent-foreground'
-                      : remainingCount === 0
-                        ? 'bg-destructive text-destructive-foreground'
-                        : 'bg-secondary text-secondary-foreground'
-                  }`}>
-                    {remainingCount} remaining
-                  </span>
-                </div>
-
-                <div className="text-xs text-muted-foreground">
-                  Click combinations to eliminate/restore them
-                </div>
-
-                <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
-                  {selectedCageCombos.map((combo, idx) => {
-                    const comboKey = getComboKey(combo)
-                    const isEliminated = selectedCage.eliminatedCombos.includes(comboKey)
-                    const leftovers = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter(n => !combo.includes(n))
-                    return (
-                      <motion.button
-                        key={comboKey}
-                        onClick={() => handleToggleCombo(comboKey)}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: idx * 0.02 }}
-                        className={`w-full p-2 rounded-lg space-y-1.5 text-left transition-all ${
-                          isEliminated
-                            ? 'bg-muted/30 opacity-50'
-                            : 'bg-secondary/50 hover:bg-secondary/70'
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          {combo.map((num, numIdx) => (
-                            <span
-                              key={numIdx}
-                              className={`w-7 h-7 flex items-center justify-center rounded-md text-sm font-bold shadow-sm border transition-all ${
-                                isEliminated
-                                  ? 'bg-muted border-muted-foreground/20 text-muted-foreground line-through'
-                                  : 'bg-white border-border'
-                              }`}
-                            >
-                              {num}
-                            </span>
-                          ))}
-                          <span className={`ml-auto text-xs ${isEliminated ? 'text-muted-foreground/50 line-through' : 'text-muted-foreground'}`}>
-                            = {combo.reduce((a, b) => a + b, 0)}
-                          </span>
-                          {isEliminated && (
-                            <span className="text-xs text-destructive font-medium">✗</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className={`text-[10px] mr-1 ${isEliminated ? 'text-muted-foreground/50' : 'text-muted-foreground'}`}>Left:</span>
-                          {leftovers.map((num, numIdx) => (
-                            <span
-                              key={numIdx}
-                              className={`w-5 h-5 flex items-center justify-center rounded text-[10px] font-medium ${
-                                isEliminated
-                                  ? 'bg-muted/30 text-muted-foreground/50'
-                                  : 'bg-muted/50 text-muted-foreground'
-                              }`}
-                            >
-                              {num}
-                            </span>
-                          ))}
-                        </div>
-                      </motion.button>
-                    )
-                  })}
-                </div>
-
-                <button
-                  onClick={() => setSelectedCageId(null)}
-                  className="w-full py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  ← Back to add new cage
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="flex gap-3">
-                  <div className="flex-1">
-                    <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-                      Target Sum
-                    </label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="45"
-                      value={targetSum}
-                      onChange={(e) => setTargetSum(e.target.value)}
-                      placeholder="e.g. 31"
-                      className="h-10"
-                      id="target-sum"
-                    />
-                  </div>
-                  <div className="w-24">
-                    <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-                      Cells
-                    </label>
-                    <Input
-                      type="number"
-                      min="2"
-                      max="9"
-                      value={numCells}
-                      onChange={(e) => setNumCells(e.target.value)}
-                      className="h-10"
-                      id="num-cells"
-                    />
-                  </div>
-                </div>
-
-                <div className="border-t border-border pt-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-foreground">
-                      Possible Combinations
-                    </span>
-                    <span className="text-xs text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">
-                      {combinations.length} found
-                    </span>
-                  </div>
-
-                  {targetSum && combinations.length === 0 ? (
-                    <div className="text-center py-6 text-muted-foreground text-sm">
-                      No valid combinations found
-                    </div>
-                  ) : combinations.length > 0 ? (
-                    <>
-                      <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 mb-3">
-                        {combinations.map((combo, idx) => {
-                          const leftovers = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter(n => !combo.includes(n))
-                          return (
-                            <motion.div
-                              key={idx}
-                              initial={{ opacity: 0, x: -10 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              transition={{ delay: idx * 0.03 }}
-                              className="p-2 bg-secondary/50 rounded-lg space-y-1.5"
-                            >
-                              <div className="flex items-center gap-1.5">
-                                {combo.map((num, numIdx) => (
-                                  <span
-                                    key={numIdx}
-                                    className="w-7 h-7 flex items-center justify-center bg-white rounded-md text-sm font-bold shadow-sm border border-border"
-                                  >
-                                    {num}
-                                  </span>
-                                ))}
-                                <span className="ml-auto text-xs text-muted-foreground">
-                                  = {combo.reduce((a, b) => a + b, 0)}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <span className="text-[10px] text-muted-foreground mr-1">Left:</span>
-                                {leftovers.map((num, numIdx) => (
-                                  <span
-                                    key={numIdx}
-                                    className="w-5 h-5 flex items-center justify-center bg-muted/50 rounded text-[10px] font-medium text-muted-foreground"
-                                  >
-                                    {num}
-                                  </span>
-                                ))}
-                              </div>
-                            </motion.div>
-                          )
-                        })}
-                      </div>
-                      <Button
-                        onClick={handleAddTrackedCage}
-                        className="w-full gap-2"
-                        size="sm"
-                      >
-                        <Plus weight="bold" size={16} />
-                        Track This Cage
-                      </Button>
-                    </>
-                  ) : (
-                    <div className="text-center py-6 text-muted-foreground text-sm">
-                      Enter a target sum to see combinations
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  )
-}
-
-export default function App() {
-  const boardRef = useRef<HTMLDivElement>(null)
-  const [positions, setPositions] = useKV<TilePosition[]>('tile-positions', getInitialPositions())
-  const [blockCount, setBlockCount] = useKV<number>('block-count', 1)
-  const [cages, setCages] = useState<Cage[]>([])
-  const [blocks, setBlocks] = useState<Block[]>([])
-  const [isCalculatorOpen, setIsCalculatorOpen] = useState(false)
-
-  useEffect(() => {
-    const currentPositions = positions ?? []
-    setCages(findCages(currentPositions))
-    setBlocks(getBlocks(currentPositions))
-  }, [positions])
-
-  const handlePositionUpdate = useCallback(
-    (id: string, newX: number, newY: number) => {
-      if (!boardRef.current) return
-
-      const rect = boardRef.current.getBoundingClientRect()
-      const maxX = rect.width - TILE_SIZE - 16
-      const maxY = rect.height - TILE_SIZE - 16
-
-      const clampedX = Math.max(16, Math.min(newX, maxX))
-      const clampedY = Math.max(16, Math.min(newY, maxY))
-
-      setPositions((prev) =>
-        (prev ?? []).map((p) => (p.id === id ? { ...p, x: clampedX, y: clampedY } : p))
-      )
-    },
-    [setPositions]
-  )
-
-  const handleBlockDrag = useCallback(
-    (blockIndex: number, deltaX: number, deltaY: number) => {
-      if (!boardRef.current) return
-
-      const rect = boardRef.current.getBoundingClientRect()
-
-      setPositions((prev) => {
-        const currentPositions = prev ?? []
-        const blockTiles = currentPositions.filter((p) => p.blockIndex === blockIndex)
-        
-        const minTileX = Math.min(...blockTiles.map((t) => t.x))
-        const minTileY = Math.min(...blockTiles.map((t) => t.y))
-        const maxTileX = Math.max(...blockTiles.map((t) => t.x))
-        const maxTileY = Math.max(...blockTiles.map((t) => t.y))
-        
-        const clampedDeltaX = Math.max(
-          16 - minTileX,
-          Math.min(deltaX, rect.width - maxTileX - TILE_SIZE - 16)
-        )
-        const clampedDeltaY = Math.max(
-          16 - minTileY,
-          Math.min(deltaY, rect.height - maxTileY - TILE_SIZE - 16)
-        )
-
-        return currentPositions.map((p) =>
-          p.blockIndex === blockIndex
-            ? { ...p, x: p.x + clampedDeltaX, y: p.y + clampedDeltaY }
-            : p
-        )
-      })
-    },
-    [setPositions]
-  )
-
-  const handleCageDrag = useCallback(
-    (tileIds: string[], deltaX: number, deltaY: number) => {
-      if (!boardRef.current) return
-
-      const rect = boardRef.current.getBoundingClientRect()
-
-      setPositions((prev) => {
-        const currentPositions = prev ?? []
-        const cageTiles = currentPositions.filter((p) => tileIds.includes(p.id))
-        
-        const minTileX = Math.min(...cageTiles.map((t) => t.x))
-        const minTileY = Math.min(...cageTiles.map((t) => t.y))
-        const maxTileX = Math.max(...cageTiles.map((t) => t.x))
-        const maxTileY = Math.max(...cageTiles.map((t) => t.y))
-        
-        const clampedDeltaX = Math.max(
-          16 - minTileX,
-          Math.min(deltaX, rect.width - maxTileX - TILE_SIZE - 16)
-        )
-        const clampedDeltaY = Math.max(
-          16 - minTileY,
-          Math.min(deltaY, rect.height - maxTileY - TILE_SIZE - 16)
-        )
-
-        return currentPositions.map((p) =>
-          tileIds.includes(p.id)
-            ? { ...p, x: p.x + clampedDeltaX, y: p.y + clampedDeltaY }
-            : p
-        )
-      })
-    },
-    [setPositions]
-  )
-
-  const handleAddBlock = useCallback(() => {
-    const currentCount = blockCount ?? 1
-    const col = currentCount % 3
-    const row = Math.floor(currentCount / 3)
-    const startX = 40 + col * (3 * (TILE_SIZE + GRID_GAP) + 60)
-    const startY = 40 + row * (3 * (TILE_SIZE + GRID_GAP) + 60)
-    
-    const newPositions = createBlockPositions(currentCount, startX, startY)
-    setPositions((prev) => [...(prev ?? []), ...newPositions])
-    setBlockCount(currentCount + 1)
-  }, [blockCount, setPositions, setBlockCount])
-
-  const handleReset = () => {
-    const freshPositions = getInitialPositions()
-    setPositions(freshPositions)
-    setBlockCount(1)
-    setCages([])
+  const handleUpdateCage = (updatedCage: TrackedCage) => {
+    setTrackedCages(prev => (prev ?? []).map(c => c.id === updatedCage.id ? updatedCage : c))
   }
 
-  const totalTiles = (positions ?? []).length
-  const tilesInCages = cages.reduce((acc, c) => acc + c.tiles.length, 0)
+  const handleEditLabel = (cageId: string, newLabel: string) => {
+    setTrackedCages(prev => (prev ?? []).map(c => c.id === cageId ? { ...c, label: newLabel } : c))
+  }
+
+  if (selectedCage) {
+    return (
+      <div className="min-h-screen bg-background p-4 md:p-8">
+        <div className="max-w-4xl mx-auto">
+          <CageDetailView
+            cage={selectedCage}
+            onBack={() => setSelectedCageId(null)}
+            onUpdate={handleUpdateCage}
+          />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
+      <div className="max-w-6xl mx-auto space-y-6">
+        <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground tracking-tight">
-              Killer Sudoku Helper
+            <h1 className="text-3xl font-bold text-foreground tracking-tight">
+              Killer Sudoku Solver
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Drag blocks by the handle or individual tiles to form cages
+            <p className="text-muted-foreground mt-1">
+              Track cages and eliminate possibilities as you solve
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => setIsCalculatorOpen(!isCalculatorOpen)}
-              className="gap-2"
+          <Button onClick={() => setIsAddingCage(true)} className="gap-2" size="lg">
+            <Plus weight="bold" />
+            Add Cage
+          </Button>
+        </div>
+
+        <AnimatePresence>
+          {isAddingCage && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
             >
-              <Calculator weight="bold" />
-              Calculator
-            </Button>
-            <Button variant="default" onClick={handleAddBlock} className="gap-2">
-              <Plus weight="bold" />
-              Add Block
-            </Button>
-            <Button variant="outline" onClick={handleReset} className="gap-2">
-              <ArrowsClockwise weight="bold" />
-              Reset
-            </Button>
-          </div>
-        </div>
+              <Card className="border-primary">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Plus weight="bold" className="text-primary" />
+                    Add New Cage
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-foreground mb-2">
+                        Label
+                      </label>
+                      <Input
+                        value={newLabel}
+                        onChange={(e) => setNewLabel(e.target.value)}
+                        placeholder="e.g., Block 1.1, Top-left cage"
+                        id="cage-label"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleAddCage()
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-2">
+                        Target Sum
+                      </label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="45"
+                        value={newSum}
+                        onChange={(e) => setNewSum(e.target.value)}
+                        placeholder="e.g., 17"
+                        id="cage-sum"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleAddCage()
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-2">
+                        Cells
+                      </label>
+                      <Input
+                        type="number"
+                        min="2"
+                        max="9"
+                        value={newCells}
+                        onChange={(e) => setNewCells(e.target.value)}
+                        id="cage-cells"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleAddCage()
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-4">
+                    <Button onClick={handleAddCage} className="gap-2">
+                      <Plus weight="bold" />
+                      Add Cage
+                    </Button>
+                    <Button variant="outline" onClick={() => {
+                      setIsAddingCage(false)
+                      setNewLabel('')
+                      setNewSum('')
+                      setNewCells('2')
+                    }}>
+                      Cancel
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        <Card className="relative overflow-hidden bg-card/50 backdrop-blur">
-          <div
-            ref={boardRef}
-            className="relative w-full h-[500px] md:h-[700px]"
-            style={{
-              backgroundImage: `
-                radial-gradient(circle, oklch(0.85 0.01 250) 1px, transparent 1px)
-              `,
-              backgroundSize: '24px 24px',
-            }}
-          >
-            {cages.map((cage, i) => (
-              <CageHandle
-                key={`cage-${i}-${cage.tiles.map(t => t.id).join('-')}`}
-                cage={cage}
-                cageIndex={i}
-                onDragEnd={handleCageDrag}
-                constraintsRef={boardRef}
-                allCages={cages}
-              />
-            ))}
-
-            {blocks.map((block) => (
-              <BlockHandle
-                key={`block-handle-${block.index}`}
-                block={block}
-                onDragEnd={handleBlockDrag}
-                constraintsRef={boardRef}
-                allBlocks={blocks}
-              />
-            ))}
-
-            {(positions ?? []).map((pos) => (
-              <NumberTile
-                key={pos.id}
-                id={pos.id}
-                value={pos.value}
-                x={pos.x}
-                y={pos.y}
-                onDragEnd={handlePositionUpdate}
-                constraintsRef={boardRef}
-              />
-            ))}
+        {(trackedCages ?? []).length === 0 ? (
+          <Card className="border-dashed">
+            <CardContent className="py-16 text-center">
+              <div className="text-muted-foreground space-y-2">
+                <div className="text-lg font-medium">No cages yet</div>
+                <div className="text-sm">Click "Add Cage" to start tracking combinations</div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <AnimatePresence>
+              {(trackedCages ?? []).map(cage => (
+                <CageCard
+                  key={cage.id}
+                  cage={cage}
+                  onSelect={() => setSelectedCageId(cage.id)}
+                  onDelete={() => handleDeleteCage(cage.id)}
+                  onEditLabel={(newLabel) => handleEditLabel(cage.id, newLabel)}
+                />
+              ))}
+            </AnimatePresence>
           </div>
-        </Card>
-
-        <div className="mt-6 flex flex-wrap gap-4 justify-center">
-          <div className="text-center px-4 py-2 rounded-lg bg-secondary">
-            <div className="text-xs text-muted-foreground uppercase tracking-wide">Blocks</div>
-            <div className="text-xl font-bold text-foreground">{blockCount ?? 1}</div>
-          </div>
-          <div className="text-center px-4 py-2 rounded-lg bg-secondary">
-            <div className="text-xs text-muted-foreground uppercase tracking-wide">Tiles</div>
-            <div className="text-xl font-bold text-foreground">{totalTiles}</div>
-          </div>
-          <div className="text-center px-4 py-2 rounded-lg bg-secondary">
-            <div className="text-xs text-muted-foreground uppercase tracking-wide">Cages</div>
-            <div className="text-xl font-bold text-foreground">{cages.length}</div>
-          </div>
-          <div className="text-center px-4 py-2 rounded-lg bg-secondary">
-            <div className="text-xs text-muted-foreground uppercase tracking-wide">Ungrouped</div>
-            <div className="text-xl font-bold text-foreground">
-              {totalTiles - tilesInCages}
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 text-center text-sm text-muted-foreground">
-          <p>Tip: Use the grip icon to drag entire blocks. Blocks cannot overlap!</p>
-        </div>
+        )}
       </div>
-
-      <CombinationCalculator
-        isOpen={isCalculatorOpen}
-        onClose={() => setIsCalculatorOpen(false)}
-      />
     </div>
   )
 }
