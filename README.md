@@ -1,23 +1,56 @@
-# ✨ Welcome to Your Spark Template!
-You've just launched your brand-new Spark Template Codespace — everything’s fired up and ready for you to explore, build, and create with Spark!
+# Killer Sudoku Solver
 
-This template is your blank canvas. It comes with a minimal setup to help you get started quickly with Spark development.
+A helper for working through killer sudoku puzzles. Enter a cage's target sum and
+cell count, see every valid number combination, and eliminate combinations as you
+rule them out.
 
-🚀 What's Inside?
-- A clean, minimal Spark environment
-- Pre-configured for local development
-- Ready to scale with your ideas
-  
-🧠 What Can You Do?
+Runs entirely in the browser — no backend, no account, no network calls.
 
-Right now, this is just a starting point — the perfect place to begin building and testing your Spark applications.
+## Live app
 
-🧹 Just Exploring?
-No problem! If you were just checking things out and don’t need to keep this code:
+Deployed to GitHub Pages: **https://carogalvin.github.io/killer-sudoku-helper/**
 
-- Simply delete your Spark.
-- Everything will be cleaned up — no traces left behind.
+On mobile, use your browser's **Add to Home Screen** to launch it fullscreen like
+a native app.
 
-📄 License For Spark Template Resources 
+## Local development
 
-The Spark Template files and resources from GitHub are licensed under the terms of the MIT license, Copyright GitHub, Inc.
+```bash
+npm install
+npm run dev      # http://localhost:5173
+```
+
+Other scripts:
+
+```bash
+npm run build    # type-check + production build into dist/
+npm run preview  # serve the production build locally
+npm run lint
+```
+
+## Deploying
+
+Every push to `main` triggers `.github/workflows/deploy.yml`, which builds the app
+and publishes `dist/` to GitHub Pages.
+
+One-time setup: in **Settings → Pages**, set **Source** to **GitHub Actions**.
+
+The Pages base path is set in `vite.config.ts`. It only applies in CI, so local dev
+still serves from `/`. If the repo is ever renamed, update the `base` value there.
+
+## Data storage
+
+Tracked cages are saved to `localStorage` under the `killer-sudoku:` prefix, so
+they persist across reloads but stay on the device you created them on. Clearing
+site data clears your cages.
+
+## Project history
+
+This started as a GitHub Spark app. It has since been migrated off Spark — the
+`useKV` hook was replaced with a `localStorage`-backed equivalent in
+`src/hooks/use-kv.ts`, and the Spark Vite plugins and runtime were removed. The
+app is now a plain React + Vite + Tailwind project.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
