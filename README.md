@@ -4,6 +4,10 @@ A helper for working through killer sudoku puzzles. Enter a cage's target sum an
 cell count, see every valid number combination, and eliminate combinations as you
 rule them out.
 
+Each tracked cage card shows the digits that **must be in the cage**, shared by
+every remaining possibility. These update as you eliminate or restore
+combinations. If no possibilities remain, the card reports that instead.
+
 Runs entirely in the browser — no backend, no account, no network calls.
 
 ## Live app

@@ -9,7 +9,7 @@ import { useKV } from '@/hooks/use-kv'
 import { toast } from 'sonner'
 import { QuickLookup } from '@/components/QuickLookup'
 import { BulkAdd } from '@/components/BulkAdd'
-import { findCombinations, getComboKey, sortBoxes, type TrackedCage } from '@/lib/killer-sudoku'
+import { analyzeCombos, findCombinations, getComboKey, sortBoxes, type TrackedCage } from '@/lib/killer-sudoku'
 
 function CageCard({ cage, onSelect, onDelete, onEditLabel, onEliminateCombo }: {
   cage: TrackedCage
@@ -26,6 +26,7 @@ function CageCard({ cage, onSelect, onDelete, onEditLabel, onEliminateCombo }: {
     return combinations.filter(combo => !cage.eliminatedCombos.includes(getComboKey(combo)))
   }, [combinations, cage.eliminatedCombos])
   const remainingCount = remainingCombinations.length
+  const { alwaysPresent } = useMemo(() => analyzeCombos(remainingCombinations), [remainingCombinations])
 
   const handleSaveLabel = () => {
     if (labelInput.trim()) {
@@ -121,6 +122,26 @@ function CageCard({ cage, onSelect, onDelete, onEditLabel, onEliminateCombo }: {
             </div>
           </div>
           
+          <div className="space-y-1.5">
+            <div className="text-xs font-medium text-muted-foreground">Must be in this cage</div>
+            {alwaysPresent.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {alwaysPresent.map(digit => (
+                  <span
+                    key={digit}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold border shadow-sm tabular-nums bg-accent/15 border-accent text-accent-foreground"
+                  >
+                    {digit}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className={`text-sm ${remainingCount === 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
+                {remainingCount === 0 ? 'No possibilities remaining' : 'No guaranteed digits yet'}
+              </div>
+            )}
+          </div>
+
           {remainingCount === 1 && (
             <div className="flex items-center gap-2 p-2 bg-accent/10 rounded-lg border border-accent cursor-pointer" onClick={onSelect}>
               <CheckCircle weight="fill" size={16} className="text-accent" />
