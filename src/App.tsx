@@ -122,9 +122,9 @@ function CageCard({ cage, onSelect, onDelete, onEditLabel, onEliminateCombo }: {
             </div>
           </div>
           
-          <div className="space-y-1.5">
-            <div className="text-xs font-medium text-muted-foreground">Must be in this cage</div>
-            {alwaysPresent.length > 0 ? (
+          {alwaysPresent.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="text-xs font-medium text-muted-foreground">Must be in this cage</div>
               <div className="flex flex-wrap gap-1.5">
                 {alwaysPresent.map(digit => (
                   <span
@@ -135,12 +135,12 @@ function CageCard({ cage, onSelect, onDelete, onEditLabel, onEliminateCombo }: {
                   </span>
                 ))}
               </div>
-            ) : (
-              <div className={`text-sm ${remainingCount === 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
-                {remainingCount === 0 ? 'No possibilities remaining' : 'No guaranteed digits yet'}
-              </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {remainingCount === 0 && (
+            <div className="text-sm text-destructive">No possibilities remaining</div>
+          )}
 
           {remainingCount === 1 && (
             <div className="flex items-center gap-2 p-2 bg-accent/10 rounded-lg border border-accent cursor-pointer" onClick={onSelect}>
