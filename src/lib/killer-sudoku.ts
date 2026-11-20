@@ -42,6 +42,20 @@ export function getComboKey(combo: number[]): string {
   return combo.join('-')
 }
 
+/**
+ * Evaluates a sum typed as whole numbers joined by + and -, such as "45-14-10-5".
+ * Returns null when the input is empty or contains anything else.
+ */
+export function evaluateSumExpression(input: string): number | null {
+  const compact = input.replace(/\s+/g, '').replace(/[−–]/g, '-')
+  if (!/^[+-]?\d+([+-]\d+)*$/.test(compact)) return null
+  let total = 0
+  for (const [, sign, digits] of compact.matchAll(/([+-]?)(\d+)/g)) {
+    total += sign === '-' ? -Number(digits) : Number(digits)
+  }
+  return total
+}
+
 /** The lowest and highest sums reachable with `numCells` distinct digits. */
 export function sumBounds(numCells: number): { min: number; max: number } {
   let min = 0

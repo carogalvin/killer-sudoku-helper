@@ -5,7 +5,13 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { BoxPicker } from '@/components/BoxPicker'
-import { analyzeCombos, buildCageLabel, findCombinations, sumBounds } from '@/lib/killer-sudoku'
+import {
+  analyzeCombos,
+  buildCageLabel,
+  evaluateSumExpression,
+  findCombinations,
+  sumBounds,
+} from '@/lib/killer-sudoku'
 import { cn } from '@/lib/utils'
 
 const CELL_CHOICES = [2, 3, 4, 5, 6, 7, 8, 9]
@@ -38,8 +44,11 @@ export function QuickLookup({ existingLabels, onTrack }: {
   const [isTracking, setIsTracking] = useState(false)
   const [boxes, setBoxes] = useState<string[]>([])
 
-  const targetSum = Number.parseInt(sumInput, 10)
-  const hasSum = Number.isFinite(targetSum)
+  const evaluatedSum = evaluateSumExpression(sumInput)
+  const targetSum = evaluatedSum ?? Number.NaN
+  const hasSum = evaluatedSum !== null
+  const isExpression = hasSum && /\d\s*[-+−–]/.test(sumInput)
+  const isInvalidExpression = sumInput.trim() !== '' && !hasSum
   const bounds = sumBounds(numCells)
   const inRange = hasSum && targetSum >= bounds.min && targetSum <= bounds.max
 
@@ -75,14 +84,22 @@ export function QuickLookup({ existingLabels, onTrack }: {
             </label>
             <Input
               id="lookup-sum"
-              type="number"
-              inputMode="numeric"
+              type="text"
+              autoComplete="off"
               autoFocus
               value={sumInput}
               onChange={e => setSumInput(e.target.value)}
-              placeholder="e.g. 24"
+              placeholder="e.g. 24 or 45-14-10-5"
               className="h-14 text-2xl font-bold tabular-nums"
             />
+            {isExpression && (
+              <p className="text-sm text-muted-foreground">
+                = <span className="font-bold text-foreground tabular-nums">{targetSum}</span>
+              </p>
+            )}
+            {isInvalidExpression && (
+              <p className="text-sm text-destructive">Use whole numbers with + and - only.</p>
+            )}
           </div>
 
           <div className="space-y-2">

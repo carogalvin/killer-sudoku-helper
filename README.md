@@ -4,6 +4,9 @@ A helper for working through killer sudoku puzzles. Enter a cage's target sum an
 cell count, see every valid number combination, and eliminate combinations as you
 rule them out.
 
+In **Look up**, the sum can be a simple formula using `+` and `-`, such as
+`45-14-10-5`. The app shows the result and the combinations for it.
+
 Each tracked cage card shows the digits that **must be in the cage**, shared by
 every remaining possibility. These update as you eliminate or restore
 combinations. If no possibilities remain, the card reports that instead.

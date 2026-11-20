@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import {
   analyzeCage,
   analyzeCombos,
+  evaluateSumExpression,
   findCombinations,
   getComboKey,
   splitCageSection,
@@ -148,4 +149,13 @@ test('nested possibilities match complete distinct-digit assignments at every le
     }
   }
   check(analyzeCage(source))
+})
+
+test('evaluateSumExpression handles + and - and rejects anything else', () => {
+  assert.equal(evaluateSumExpression('45-14-10-5'), 16)
+  assert.equal(evaluateSumExpression(' 12 + 7 − 3 '), 16)
+  assert.equal(evaluateSumExpression('24'), 24)
+  assert.equal(evaluateSumExpression(''), null)
+  assert.equal(evaluateSumExpression('45-'), null)
+  assert.equal(evaluateSumExpression('4*5'), null)
 })
