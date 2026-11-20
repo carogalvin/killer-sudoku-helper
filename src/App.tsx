@@ -9,7 +9,7 @@ import { useKV } from '@/hooks/use-kv'
 import { toast } from 'sonner'
 import { QuickLookup } from '@/components/QuickLookup'
 import { BulkAdd } from '@/components/BulkAdd'
-import { CageCombinationList, CageSplitControls, CageSubsections, GuaranteedDigits } from '@/components/CageSections'
+import { CageCombinationList, CageDigitSummary, CageSplitControls, CageSubsections } from '@/components/CageSections'
 import { analyzeCage, getComboKey, sortBoxes, type TrackedCage } from '@/lib/killer-sudoku'
 
 function CageCard({ cage, onSelect, onDelete, onEditLabel, onEliminateCombo, onUpdate }: {
@@ -116,7 +116,7 @@ function CageCard({ cage, onSelect, onDelete, onEditLabel, onEliminateCombo, onU
             </div>
           </div>
           
-          <GuaranteedDigits combinations={remainingCombinations} />
+          <CageDigitSummary combinations={remainingCombinations} />
 
           {remainingCount === 0 && (
             <div className="text-sm text-destructive">No possibilities remaining</div>

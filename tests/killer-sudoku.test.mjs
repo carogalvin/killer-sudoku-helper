@@ -29,6 +29,16 @@ test('existing cages retain their combinations and eliminations', () => {
   assert.equal(analysis.split, undefined)
 })
 
+test('excluded digits update when combinations are eliminated and restored', () => {
+  const source = cage(10, 3)
+  const excluded = current => analyzeCombos(analyzeCage(current).remainingCombinations).neverPresent
+  assert.deepEqual(excluded(source), [8, 9])
+  const narrowed = { ...source, eliminatedCombos: ['1-4-5', '2-3-5'] }
+  assert.deepEqual(excluded(narrowed), [4, 5, 8, 9])
+  const restored = { ...narrowed, eliminatedCombos: ['1-4-5'] }
+  assert.deepEqual(excluded(restored), [4, 8, 9])
+})
+
 test('a split calculates its remainder and prevents shared digits between subsections', () => {
   const source = cage()
   const updated = split(source, source.id, 3, 15)
@@ -40,6 +50,7 @@ test('a split calculates its remainder and prevents shared digits between subsec
   const analysis = analyzeCage(updated)
   const small = analyzeCage(split(cage(10, 3), 'cage', 1, 1))
   assert.deepEqual(small.split.second.remainingCombinations, [[2, 7], [3, 6], [4, 5]])
+  assert.deepEqual(analyzeCombos(small.split.second.remainingCombinations).neverPresent, [1, 8, 9])
   for (const first of analysis.split.first.remainingCombinations) {
     assert.ok(analysis.split.second.remainingCombinations.some(second => (
       first.every(digit => !second.includes(digit))

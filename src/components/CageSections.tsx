@@ -11,23 +11,42 @@ import {
   type TrackedCage,
 } from '@/lib/killer-sudoku'
 
-export function GuaranteedDigits({ combinations, scope = 'cage' }: { combinations: number[][]; scope?: 'cage' | 'section' }) {
-  const { alwaysPresent } = analyzeCombos(combinations)
-  if (alwaysPresent.length === 0) return null
+export function CageDigitSummary({ combinations, scope = 'cage' }: { combinations: number[][]; scope?: 'cage' | 'section' }) {
+  const { alwaysPresent, neverPresent } = analyzeCombos(combinations)
+  if (combinations.length === 0 || (alwaysPresent.length === 0 && neverPresent.length === 0)) return null
 
   return (
-    <div className="space-y-1.5">
-      <div className="text-xs font-medium text-muted-foreground">Must be in this {scope}</div>
-      <div className="flex flex-wrap gap-1.5">
-        {alwaysPresent.map(digit => (
-          <span
-            key={digit}
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold border shadow-sm tabular-nums bg-accent/15 border-accent text-accent-foreground"
-          >
-            {digit}
-          </span>
-        ))}
-      </div>
+    <div className="space-y-3">
+      {alwaysPresent.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="text-xs font-medium text-muted-foreground">Must be in this {scope}</div>
+          <div className="flex flex-wrap gap-1.5">
+            {alwaysPresent.map(digit => (
+              <span
+                key={digit}
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold border shadow-sm tabular-nums bg-accent/15 border-accent text-accent-foreground"
+              >
+                {digit}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {neverPresent.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="text-xs font-medium text-muted-foreground">Can't be in this {scope}</div>
+          <div className="flex flex-wrap gap-1.5">
+            {neverPresent.map(digit => (
+              <span
+                key={digit}
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold border shadow-sm tabular-nums bg-muted/60 border-transparent text-muted-foreground/60 line-through"
+              >
+                {digit}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -221,7 +240,7 @@ function Subsection({ cage, analysis, label, onUpdate }: {
         </>
       ) : (
         <>
-          <GuaranteedDigits combinations={remainingCombinations} scope="section" />
+          <CageDigitSummary combinations={remainingCombinations} scope="section" />
           {remainingCombinations.length === 0 ? (
             <div className="text-sm text-destructive">No possibilities remaining</div>
           ) : (

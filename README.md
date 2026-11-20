@@ -7,9 +7,11 @@ rule them out.
 In **Look up**, the sum can be a simple formula using `+` and `-`, such as
 `45-14-10-5`. The app shows the result and the combinations for it.
 
-Each tracked cage card shows the digits that **must be in the cage**, shared by
-every remaining possibility. These update as you eliminate or restore
-combinations. If no possibilities remain, the card reports that instead.
+Each tracked cage card shows digits that **must be in the cage** (shared by
+every remaining possibility) and digits that **can't be in the cage** (absent
+from every remaining possibility). These update as you eliminate or restore
+combinations, and also appear for subsections. If no possibilities remain, the
+card reports that instead.
 
 Use **Split cage** to enter a subsection's cell count and sum; the other
 subsection is calculated automatically. Both appear on the same card, and each
