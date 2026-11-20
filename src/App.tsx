@@ -9,35 +9,29 @@ import { useKV } from '@/hooks/use-kv'
 import { toast } from 'sonner'
 import { QuickLookup } from '@/components/QuickLookup'
 import { BulkAdd } from '@/components/BulkAdd'
-import { analyzeCombos, findCombinations, getComboKey, sortBoxes, type TrackedCage } from '@/lib/killer-sudoku'
+import { CageCombinationList, CageSplitControls, CageSubsections, GuaranteedDigits } from '@/components/CageSections'
+import { analyzeCage, getComboKey, sortBoxes, type TrackedCage } from '@/lib/killer-sudoku'
 
-function CageCard({ cage, onSelect, onDelete, onEditLabel, onEliminateCombo }: {
+function CageCard({ cage, onSelect, onDelete, onEditLabel, onEliminateCombo, onUpdate }: {
   cage: TrackedCage
   onSelect: () => void
   onDelete: () => void
   onEditLabel: (newLabel: string) => void
   onEliminateCombo: (comboKey: string) => void
+  onUpdate: (cage: TrackedCage) => void
 }) {
   const [isEditingLabel, setIsEditingLabel] = useState(false)
   const [labelInput, setLabelInput] = useState(cage.label)
 
-  const combinations = useMemo(() => findCombinations(cage.targetSum, cage.numCells), [cage.targetSum, cage.numCells])
-  const remainingCombinations = useMemo(() => {
-    return combinations.filter(combo => !cage.eliminatedCombos.includes(getComboKey(combo)))
-  }, [combinations, cage.eliminatedCombos])
+  const analysis = useMemo(() => analyzeCage(cage), [cage])
+  const { combinations, remainingCombinations } = analysis
   const remainingCount = remainingCombinations.length
-  const { alwaysPresent } = useMemo(() => analyzeCombos(remainingCombinations), [remainingCombinations])
 
   const handleSaveLabel = () => {
     if (labelInput.trim()) {
       onEditLabel(labelInput.trim())
     }
     setIsEditingLabel(false)
-  }
-
-  const handleComboClick = (e: React.MouseEvent, combo: number[]) => {
-    e.stopPropagation()
-    onEliminateCombo(getComboKey(combo))
   }
 
   return (
@@ -122,21 +116,7 @@ function CageCard({ cage, onSelect, onDelete, onEditLabel, onEliminateCombo }: {
             </div>
           </div>
           
-          {alwaysPresent.length > 0 && (
-            <div className="space-y-1.5">
-              <div className="text-xs font-medium text-muted-foreground">Must be in this cage</div>
-              <div className="flex flex-wrap gap-1.5">
-                {alwaysPresent.map(digit => (
-                  <span
-                    key={digit}
-                    className="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold border shadow-sm tabular-nums bg-accent/15 border-accent text-accent-foreground"
-                  >
-                    {digit}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
+          <GuaranteedDigits combinations={remainingCombinations} />
 
           {remainingCount === 0 && (
             <div className="text-sm text-destructive">No possibilities remaining</div>
@@ -149,30 +129,15 @@ function CageCard({ cage, onSelect, onDelete, onEditLabel, onEliminateCombo }: {
             </div>
           )}
 
-          <div className="space-y-2">
-            <div className="text-xs font-medium text-muted-foreground">Remaining possibilities (click to eliminate):</div>
-            <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-              {remainingCombinations.map((combo, idx) => (
-                <button
-                  key={idx}
-                  onClick={(e) => handleComboClick(e, combo)}
-                  className="w-full flex items-center gap-1.5 p-1.5 bg-secondary/50 hover:bg-destructive/10 rounded-lg transition-colors group"
-                >
-                  {combo.map((num, numIdx) => (
-                    <span
-                      key={numIdx}
-                      className="w-7 h-7 flex items-center justify-center rounded bg-white border border-border text-sm font-bold shadow-sm group-hover:border-destructive/50 transition-colors"
-                    >
-                      {num}
-                    </span>
-                  ))}
-                  <span className="ml-auto text-destructive opacity-0 group-hover:opacity-100 transition-opacity font-bold text-sm">
-                    ✗
-                  </span>
-                </button>
-              ))}
+          <CageSplitControls cage={cage} section={cage} onUpdate={onUpdate} />
+          {analysis.split ? (
+            <CageSubsections cage={cage} split={analysis.split} onUpdate={onUpdate} />
+          ) : (
+            <div className="space-y-2">
+              <div className="text-xs font-medium text-muted-foreground">Remaining possibilities (click to eliminate):</div>
+              <CageCombinationList combinations={remainingCombinations} onToggle={onEliminateCombo} />
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
     </motion.div>
@@ -184,7 +149,7 @@ function CageDetailView({ cage, onBack, onUpdate }: {
   onBack: () => void
   onUpdate: (updatedCage: TrackedCage) => void
 }) {
-  const combinations = useMemo(() => findCombinations(cage.targetSum, cage.numCells), [cage.targetSum, cage.numCells])
+  const { combinations, remainingCombinations } = useMemo(() => analyzeCage(cage), [cage])
 
   const handleToggleCombo = (comboKey: string) => {
     const isEliminated = cage.eliminatedCombos.includes(comboKey)
@@ -197,7 +162,7 @@ function CageDetailView({ cage, onBack, onUpdate }: {
     onUpdate(updatedCage)
   }
 
-  const remainingCount = combinations.length - cage.eliminatedCombos.length
+  const remainingCount = remainingCombinations.length
 
   return (
     <motion.div
@@ -246,33 +211,37 @@ function CageDetailView({ cage, onBack, onUpdate }: {
         <CardContent>
           <div className="text-sm text-muted-foreground mb-4">
             Click combinations to eliminate or restore them
+            {cage.split && '. Combinations excluded by subsections cannot be restored here.'}
           </div>
           
           <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2">
             {combinations.map((combo, idx) => {
               const comboKey = getComboKey(combo)
               const isEliminated = cage.eliminatedCombos.includes(comboKey)
+              const isConstrained = !isEliminated && !remainingCombinations.some(combo => getComboKey(combo) === comboKey)
+              const isUnavailable = isEliminated || isConstrained
               const leftovers = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter(n => !combo.includes(n))
               
               return (
                 <motion.button
                   key={comboKey}
+                  disabled={isConstrained}
                   onClick={() => handleToggleCombo(comboKey)}
                   initial={{ opacity: 0, y: -5 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: idx * 0.01 }}
                   className={`w-full p-3 rounded-xl space-y-2 text-left transition-all ${
-                    isEliminated
+                    isUnavailable
                       ? 'bg-muted/30 opacity-50 hover:opacity-70'
                       : 'bg-secondary hover:bg-secondary/80 shadow-sm'
                   }`}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {combo.map((num, numIdx) => (
                       <span
                         key={numIdx}
                         className={`w-10 h-10 flex items-center justify-center rounded-lg text-lg font-bold shadow-sm border transition-all ${
-                          isEliminated
+                          isUnavailable
                             ? 'bg-muted border-muted-foreground/20 text-muted-foreground line-through'
                             : 'bg-white border-border'
                         }`}
@@ -281,7 +250,7 @@ function CageDetailView({ cage, onBack, onUpdate }: {
                       </span>
                     ))}
                     <span className={`ml-auto text-sm font-medium ${
-                      isEliminated ? 'text-muted-foreground/50 line-through' : 'text-muted-foreground'
+                      isUnavailable ? 'text-muted-foreground/50 line-through' : 'text-muted-foreground'
                     }`}>
                       = {combo.reduce((a, b) => a + b, 0)}
                     </span>
@@ -289,15 +258,16 @@ function CageDetailView({ cage, onBack, onUpdate }: {
                       <span className="text-destructive font-bold">✗</span>
                     )}
                   </div>
+                  {isConstrained && <div className="text-xs text-muted-foreground">Excluded by subsections</div>}
                   <div className="flex items-center gap-1.5">
-                    <span className={`text-xs ${isEliminated ? 'text-muted-foreground/50' : 'text-muted-foreground'}`}>
+                    <span className={`text-xs ${isUnavailable ? 'text-muted-foreground/50' : 'text-muted-foreground'}`}>
                       Leftovers:
                     </span>
                     {leftovers.map((num, numIdx) => (
                       <span
                         key={numIdx}
                         className={`w-6 h-6 flex items-center justify-center rounded text-xs font-medium ${
-                          isEliminated
+                          isUnavailable
                             ? 'bg-muted/30 text-muted-foreground/50'
                             : 'bg-muted/60 text-muted-foreground'
                         }`}
@@ -475,6 +445,7 @@ export default function App() {
                       onDelete={() => handleDeleteCage(cage.id)}
                       onEditLabel={newLabel => handleEditLabel(cage.id, newLabel)}
                       onEliminateCombo={comboKey => handleEliminateCombo(cage.id, comboKey)}
+                      onUpdate={handleUpdateCage}
                     />
                   ))}
                 </AnimatePresence>

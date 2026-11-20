@@ -8,6 +8,13 @@ Each tracked cage card shows the digits that **must be in the cage**, shared by
 every remaining possibility. These update as you eliminate or restore
 combinations. If no possibilities remain, the card reports that instead.
 
+Use **Split cage** to enter a subsection's cell count and sum; the other
+subsection is calculated automatically. Both appear on the same card, and each
+can be split again. Possibilities respect the original cage's distinct-digit
+rule and all eliminations across its subsections. Expand **Eliminated** to
+restore a subsection's combinations, or use **Undo split** to remove a split
+and its descendants. Splits are saved with your cages.
+
 Runs entirely in the browser — no backend, no account, no network calls.
 
 ## Live app
@@ -30,6 +37,7 @@ Other scripts:
 npm run build    # type-check + production build into dist/
 npm run preview  # serve the production build locally
 npm run lint
+npm test         # split and combination tests (Node 24+)
 ```
 
 ## Deploying
